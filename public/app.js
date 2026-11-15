@@ -112,7 +112,9 @@ const elements = {
     closeCartBtn: document.getElementById('closeCartBtn'),
     cartItemsList: document.getElementById('cartItemsList'),
     cartTotalSum: document.getElementById('cartTotalSum'),
-    starburstCanvas: document.getElementById('starburstCanvas')
+    starburstCanvas: document.getElementById('starburstCanvas'),
+    brandTitle: document.querySelector('.brand-title'),
+    brandTagline: document.querySelector('.brand-tagline')
 };
 
 // --- INITIALIZATION ---
@@ -500,6 +502,9 @@ function setupEventListeners() {
         if (elements.artclusiveTab) elements.artclusiveTab.classList.remove('active');
         if (elements.mainContent) elements.mainContent.style.display = 'block';
         if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
+        document.body.classList.remove('artclusive-mode');
+        if (elements.brandTitle) elements.brandTitle.textContent = 'ARTPOURE';
+        if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ETHNIC EDITORIAL';
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
@@ -512,6 +517,9 @@ function setupEventListeners() {
                 elements.collectionTab.classList.remove('active');
                 if (elements.mainContent) elements.mainContent.style.display = 'none';
                 if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+                document.body.classList.add('artclusive-mode');
+                if (elements.brandTitle) elements.brandTitle.textContent = 'ARTCLUSIVE';
+                if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ATELIER & BESPOKE VAULT';
                 renderVaultPieces();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             });

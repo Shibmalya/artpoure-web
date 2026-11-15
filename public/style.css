@@ -908,6 +908,15 @@ body {
 /* ==========================================================================
    ARTCLUSIVE DEDICATED PAGE (Haute Atelier & Bespoke Vault)
    ========================================================================== */
+body.artclusive-mode .location-layer,
+body.artclusive-mode .categories-layer {
+    display: none !important;
+}
+
+body.artclusive-mode .brand-title {
+    letter-spacing: 3px;
+}
+
 .artclusive-page {
     position: relative;
     z-index: 10;
