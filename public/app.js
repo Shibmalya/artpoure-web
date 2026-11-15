@@ -593,7 +593,7 @@ function renderVaultPieces() {
     });
 }
 
-// --- STARBURST SUPERNOVA TRANSITION ENGINE ---
+// --- STARBURST SUPERNOVA TRANSITION ENGINE (2000ms Firecracker Engine) ---
 let isStarburstActive = false;
 
 function triggerStarburstTransition(buttonRect, onPeak) {
@@ -617,37 +617,48 @@ function triggerStarburstTransition(buttonRect, onPeak) {
     const startX = buttonRect.left + buttonRect.width / 2;
     const startY = buttonRect.top + buttonRect.height / 2;
     const epicenterX = width / 2;
-    const epicenterY = height * 0.44;
+    const epicenterY = height * 0.42;
 
-    const goldPalette = ['#FFF6D6', '#F7D974', '#D4AF37', '#E5C07B', '#B38F28'];
+    const goldPalette = [
+        '#FFFDF2', // Diamond Sparkle White-Gold
+        '#FFF1A8', // Radiant Light Gold
+        '#F7D974', // Imperial Gold
+        '#D4AF37', // Pure Metallic 24k Gold
+        '#E5C07B', // Royal Rajputana Gold
+        '#B38F28'  // Deep Antique Amber Gold
+    ];
 
-    // 22 Launch Stars
+    // 64 Staggered Launch Stars (Firecracker Fountain)
     const launchStars = [];
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 64; i++) {
         launchStars.push({
-            size: 14 + Math.random() * 16,
-            rotation: Math.random() * Math.PI * 2,
-            rotSpeed: (Math.random() - 0.5) * 8,
+            ignitionDelay: Math.random() * 0.16,
+            targetOffsetX: (Math.random() - 0.5) * 220,
+            size: 10 + Math.random() * 18,
+            rotationSpeed: (Math.random() - 0.5) * 9.42,
+            baseRotation: Math.random() * Math.PI * 2,
             color: goldPalette[i % goldPalette.length],
-            trajOffsetX: (Math.random() - 0.5) * 120
+            arcCurveX: (Math.random() - 0.5) * 80
         });
     }
 
-    // 36 Radial Sparks
+    // 88 Radial Supernova Fireworks Sparks with Gravity
     const burstSparks = [];
-    for (let i = 0; i < 36; i++) {
-        const angle = (i / 36) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+    for (let i = 0; i < 88; i++) {
+        const angle = (i / 88) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
         burstSparks.push({
             angle: angle,
-            speed: 350 + Math.random() * 550,
-            size: 8 + Math.random() * 12,
-            rotation: Math.random() * Math.PI * 2,
-            rotSpeed: (Math.random() - 0.5) * 10,
-            color: goldPalette[i % goldPalette.length]
+            speed: 280 + Math.random() * 680,
+            gravity: 260 + Math.random() * 220,
+            size: 6 + Math.random() * 13,
+            rotationSpeed: (Math.random() - 0.5) * 12.56,
+            baseRotation: Math.random() * Math.PI * 2,
+            color: goldPalette[i % goldPalette.length],
+            twinkleFrequency: 3 + Math.random() * 4
         });
     }
 
-    const duration = 750; // ms
+    const duration = 2000; // Expanded to 2000ms for slow-motion cinematic majesty
     const startTime = performance.now();
     let peakFired = false;
 
@@ -656,46 +667,78 @@ function triggerStarburstTransition(buttonRect, onPeak) {
         const progress = Math.min(elapsed / duration, 1);
         ctx.clearRect(0, 0, width, height);
 
-        // Check peak explosion trigger at t = 0.44 (~330ms)
-        if (progress >= 0.44 && !peakFired) {
+        // Detonation peak trigger at t = 0.425 (~850ms) to unveil ArtClusive page under veil
+        if (progress >= 0.425 && !peakFired) {
             peakFired = true;
             if (onPeak) onPeak();
         }
 
-        // Phase 1: Launch upward to epicenter (progress 0.0 -> 0.52)
+        // Phase 1: Firecracker Fountain Ascent (progress 0.0 -> 0.52)
         if (progress < 0.52) {
-            const launchT = Math.min(progress / 0.48, 1);
-            const launchAlpha = Math.max(0, Math.min(1, 1 - (launchT - 0.65) / 0.35));
-
             launchStars.forEach(star => {
-                const curX = startX + (epicenterX + star.trajOffsetX * (1 - launchT) - startX) * launchT;
-                const curY = startY + (epicenterY - startY) * (launchT * launchT);
-                const curSize = star.size * (0.8 + 0.6 * Math.sin(launchT * Math.PI));
-                const curRot = star.rotation + star.rotSpeed * launchT;
+                if (progress >= star.ignitionDelay) {
+                    const rawT = Math.min(1, Math.max(0, (progress - star.ignitionDelay) / (0.44 - star.ignitionDelay)));
+                    // Decelerating upward ascent (Ease-Out Quadratic)
+                    const starT = 1 - (1 - rawT) * (1 - rawT);
 
-                draw4PointStar(ctx, curX, curY, curSize, curRot, star.color, launchAlpha);
+                    let starAlpha = 1;
+                    if (rawT < 0.15) {
+                        starAlpha = rawT / 0.15;
+                    } else if (rawT > 0.75) {
+                        starAlpha = Math.max(0, 1 - (rawT - 0.75) / 0.25);
+                    }
+
+                    const currentX = startX + (epicenterX + star.targetOffsetX - startX) * starT + Math.sin(starT * Math.PI) * star.arcCurveX;
+                    const currentY = startY + (epicenterY - startY) * starT;
+
+                    // Draw 2 glowing trail spark dots behind rocket star
+                    if (rawT >= 0.1 && rawT <= 0.85 && starAlpha > 0.2) {
+                        const trail1T = Math.max(0, starT - 0.05);
+                        const trail2T = Math.max(0, starT - 0.10);
+
+                        const trail1X = startX + (epicenterX + star.targetOffsetX - startX) * trail1T;
+                        const trail1Y = startY + (epicenterY - startY) * trail1T;
+                        ctx.fillStyle = star.color;
+                        ctx.globalAlpha = starAlpha * 0.45;
+                        ctx.beginPath();
+                        ctx.arc(trail1X, trail1Y, star.size * 0.28, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        const trail2X = startX + (epicenterX + star.targetOffsetX - startX) * trail2T;
+                        const trail2Y = startY + (epicenterY - startY) * trail2T;
+                        ctx.globalAlpha = starAlpha * 0.22;
+                        ctx.beginPath();
+                        ctx.arc(trail2X, trail2Y, star.size * 0.16, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.globalAlpha = 1.0;
+                    }
+
+                    const curSize = star.size * (0.85 + 0.45 * Math.sin(rawT * Math.PI));
+                    const curRot = star.baseRotation + star.rotationSpeed * rawT;
+                    draw4PointStar(ctx, currentX, currentY, curSize, curRot, star.color, starAlpha);
+                }
             });
         }
 
         // Phase 2: Supernova Radial Starlight Veil & Shockwave (progress 0.38 -> 1.0)
         if (progress >= 0.38) {
-            const burstT = (progress - 0.38) / 0.62;
-            const maxRadius = Math.hypot(width, height) * 0.95;
-            const curRadius = maxRadius * Math.sqrt(burstT);
+            const burstProgress = Math.min(1, Math.max(0, (progress - 0.38) / 0.62));
+            const maxRadius = Math.hypot(width, height) * 1.1;
+            const curRadius = maxRadius * Math.sqrt(burstProgress);
 
             let veilAlpha = 0;
-            if (burstT < 0.35) {
-                veilAlpha = Math.min(burstT / 0.35, 0.92);
+            if (burstProgress < 0.25) {
+                veilAlpha = Math.min(burstProgress / 0.25, 0.94);
             } else {
-                veilAlpha = Math.max(0, 1 - (burstT - 0.35) / 0.65) * 0.92;
+                veilAlpha = Math.max(0, (1 - (burstProgress - 0.25) / 0.75) * 0.94);
             }
 
             if (veilAlpha > 0.01) {
                 const grad = ctx.createRadialGradient(epicenterX, epicenterY, 0, epicenterX, epicenterY, curRadius);
-                grad.addColorStop(0, `rgba(255, 253, 245, ${veilAlpha * 0.95})`);
-                grad.addColorStop(0.3, `rgba(247, 217, 116, ${veilAlpha * 0.75})`);
-                grad.addColorStop(0.65, `rgba(212, 175, 55, ${veilAlpha * 0.45})`);
-                grad.addColorStop(0.9, `rgba(20, 19, 18, ${veilAlpha * 0.2})`);
+                grad.addColorStop(0, `rgba(255, 253, 245, ${veilAlpha * 0.96})`);
+                grad.addColorStop(0.25, `rgba(247, 217, 116, ${veilAlpha * 0.78})`);
+                grad.addColorStop(0.55, `rgba(212, 175, 55, ${veilAlpha * 0.48})`);
+                grad.addColorStop(0.85, `rgba(20, 19, 18, ${veilAlpha * 0.22})`);
                 grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
                 ctx.fillStyle = grad;
@@ -704,18 +747,22 @@ function triggerStarburstTransition(buttonRect, onPeak) {
                 ctx.fill();
             }
 
-            // Phase 3: Radial Sparks
-            if (progress >= 0.44) {
-                const sparkT = (progress - 0.44) / 0.52;
-                const sparkAlpha = Math.max(0, 1 - sparkT);
+            // Phase 3: 88 Radial Fireworks Sparks with Gravity & Twinkle (progress 0.42 -> 0.98)
+            if (progress >= 0.42) {
+                const sparkFraction = Math.min(1, Math.max(0, (progress - 0.42) / 0.56));
+                const baseSparkAlpha = Math.max(0, 1 - sparkFraction);
 
-                if (sparkAlpha > 0.02) {
+                if (baseSparkAlpha > 0.01) {
                     burstSparks.forEach(spark => {
-                        const dist = spark.speed * sparkT;
-                        const px = epicenterX + Math.cos(spark.angle) * dist;
-                        const py = epicenterY + Math.sin(spark.angle) * dist;
-                        const pSize = spark.size * (1 - sparkT * 0.4);
-                        const pRot = spark.rotation + spark.rotSpeed * sparkT;
+                        const distance = spark.speed * sparkFraction;
+                        const dropGravity = spark.gravity * sparkFraction * sparkFraction;
+                        const px = epicenterX + Math.cos(spark.angle) * distance;
+                        const py = epicenterY + Math.sin(spark.angle) * distance + dropGravity;
+
+                        const shimmer = 0.7 + 0.3 * Math.sin(sparkFraction * spark.twinkleFrequency * Math.PI);
+                        const sparkAlpha = Math.min(1, Math.max(0, baseSparkAlpha * shimmer));
+                        const pSize = spark.size * (1 - sparkFraction * 0.35);
+                        const pRot = spark.baseRotation + spark.rotationSpeed * sparkFraction;
 
                         draw4PointStar(ctx, px, py, pSize, pRot, spark.color, sparkAlpha);
                     });
