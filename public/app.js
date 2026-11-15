@@ -497,11 +497,35 @@ function setupScrollPhysics() {
     }, { passive: true });
 }
 
-// --- THEME SWITCHER (Light / Dark Mode) ---
+// --- THEME SWITCHER (Light / Dark Mode) & AMBIENT VIDEO ENGINE ---
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('artpoure_theme', theme);
     state.theme = theme;
+    updateAmbientVideo();
+}
+
+function updateAmbientVideo() {
+    const video = document.getElementById('ambientVideo');
+    if (!video) return;
+
+    const isArtclusive = document.body.classList.contains('artclusive-mode');
+    const isDark = state.theme === 'dark';
+
+    let targetSrc = '';
+    if (isArtclusive) {
+        // ArtClusive background videos: exclusive_dark.mp4 for dark mode, exclusive_light.mp4 for light mode
+        targetSrc = isDark ? 'videos/exclusive_dark.mp4' : 'videos/exclusive_light.mp4';
+    } else {
+        targetSrc = 'https://assets.mixkit.co/videos/preview/mixkit-curtain-of-golden-silk-blowing-in-the-wind-41551-large.mp4';
+    }
+
+    const currentSource = video.querySelector('source');
+    if (currentSource && currentSource.getAttribute('src') !== targetSrc) {
+        currentSource.setAttribute('src', targetSrc);
+        video.load();
+        video.play().catch(e => console.warn('Ambient video autoplay note:', e));
+    }
 }
 
 // --- EVENT LISTENERS ---
@@ -549,6 +573,7 @@ function setupEventListeners() {
         document.body.classList.remove('artclusive-mode');
         if (elements.brandTitle) elements.brandTitle.textContent = 'ARTPOURE';
         if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ETHNIC EDITORIAL';
+        updateAmbientVideo();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
@@ -565,6 +590,7 @@ function setupEventListeners() {
                 document.body.classList.add('artclusive-mode');
                 if (elements.brandTitle) elements.brandTitle.textContent = 'ARTCLUSIVE';
                 if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ATELIER & BESPOKE VAULT';
+                updateAmbientVideo();
                 renderVaultPieces();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             });
@@ -681,22 +707,50 @@ function setupEventListeners() {
             const phoneError = document.getElementById('consultPhoneError');
             if (nameError) nameError.style.display = 'none';
             if (phoneError) phoneError.style.display = 'none';
+            if (nameInput) nameInput.classList.remove('input-invalid');
+            if (phoneInput) phoneInput.classList.remove('input-invalid');
 
-            // Auto-fetch profile name and number if user is logged in
+            // Auto-fetch profile name and number if user is logged in (strip +91, exactly 10 digits)
             const currentUser = auth.currentUser;
             const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
-            const profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '+91 98765 43210';
+            const rawProfilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '9876543210';
+            const cleanProfilePhone = rawProfilePhone.replace(/\D/g, '').slice(-10);
 
             if (nameInput && !nameInput.value.trim() && profileName) {
                 nameInput.value = profileName;
             }
-            if (phoneInput && !phoneInput.value.trim() && profilePhone) {
-                phoneInput.value = profilePhone;
+            if (phoneInput && !phoneInput.value.trim() && cleanProfilePhone) {
+                phoneInput.value = cleanProfilePhone;
             }
 
             elements.consultationOverlay.classList.add('open');
         });
     }
+
+    const consultPhoneEl = document.getElementById('consultPhone');
+    if (consultPhoneEl) {
+        consultPhoneEl.addEventListener('input', (e) => {
+            // Strictly allow only digits and at most 10 digits (no +91 or extra characters)
+            e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+            const phoneError = document.getElementById('consultPhoneError');
+            if (e.target.value.length === 10) {
+                if (phoneError) phoneError.style.display = 'none';
+                e.target.classList.remove('input-invalid');
+            }
+        });
+    }
+
+    const consultNameEl = document.getElementById('consultName');
+    if (consultNameEl) {
+        consultNameEl.addEventListener('input', (e) => {
+            const nameError = document.getElementById('consultNameError');
+            if (e.target.value.trim().length > 0) {
+                if (nameError) nameError.style.display = 'none';
+                e.target.classList.remove('input-invalid');
+            }
+        });
+    }
+
     if (elements.closeConsultationBtn && elements.consultationOverlay) {
         elements.closeConsultationBtn.addEventListener('click', () => {
             elements.consultationOverlay.classList.remove('open');
@@ -724,16 +778,24 @@ function setupEventListeners() {
             let isValid = true;
             if (!name) {
                 if (nameError) nameError.style.display = 'block';
+                if (nameInput) nameInput.classList.add('input-invalid');
                 isValid = false;
             } else {
                 if (nameError) nameError.style.display = 'none';
+                if (nameInput) nameInput.classList.remove('input-invalid');
             }
 
-            if (!phone || phoneDigits.length < 10) {
-                if (phoneError) phoneError.style.display = 'block';
+            // Must be exactly 10 digits and contain no +91 or non-digits
+            if (phone.length !== 10 || phoneDigits.length !== 10) {
+                if (phoneError) {
+                    phoneError.textContent = "Please enter a valid 10-digit mobile number (without +91)";
+                    phoneError.style.display = 'block';
+                }
+                if (phoneInput) phoneInput.classList.add('input-invalid');
                 isValid = false;
             } else {
                 if (phoneError) phoneError.style.display = 'none';
+                if (phoneInput) phoneInput.classList.remove('input-invalid');
             }
 
             if (!isValid) return;
@@ -742,6 +804,7 @@ function setupEventListeners() {
             const weaveSuffix = weave ? ` for "${weave}"` : '';
             elements.consultationOverlay.classList.remove('open');
             alert(`Consultation Confirmed${weaveSuffix}! Our Master Atelier Concierge will connect with ${name} shortly.`);
+        });
         });
     }
 }
