@@ -514,8 +514,8 @@ function updateAmbientVideo() {
 
     let targetSrc = '';
     if (isArtclusive) {
-        // ArtClusive background videos: exclusive_dark.mp4 for dark mode, exclusive_light.mp4 for light mode
-        targetSrc = isDark ? 'videos/exclusive_dark.mp4' : 'videos/exclusive_light.mp4';
+        // ArtClusive background videos: exclusive_light.mp4 for dark mode, exclusive_dark.mp4 for light mode
+        targetSrc = isDark ? 'videos/exclusive_light.mp4' : 'videos/exclusive_dark.mp4';
     } else {
         targetSrc = 'https://assets.mixkit.co/videos/preview/mixkit-curtain-of-golden-silk-blowing-in-the-wind-41551-large.mp4';
     }
