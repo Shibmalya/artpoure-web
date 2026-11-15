@@ -111,7 +111,8 @@ const elements = {
     submitConsultationBtn: document.getElementById('submitConsultationBtn'),
     closeCartBtn: document.getElementById('closeCartBtn'),
     cartItemsList: document.getElementById('cartItemsList'),
-    cartTotalSum: document.getElementById('cartTotalSum')
+    cartTotalSum: document.getElementById('cartTotalSum'),
+    starburstCanvas: document.getElementById('starburstCanvas')
 };
 
 // --- INITIALIZATION ---
@@ -504,12 +505,16 @@ function setupEventListeners() {
 
     if (elements.artclusiveTab) {
         elements.artclusiveTab.addEventListener('click', () => {
-            elements.artclusiveTab.classList.add('active');
-            elements.collectionTab.classList.remove('active');
-            if (elements.mainContent) elements.mainContent.style.display = 'none';
-            if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
-            renderVaultPieces();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            const rect = elements.artclusiveTab.getBoundingClientRect();
+            triggerStarburstTransition(rect, () => {
+                // Peak supernova burst callback (reveal ArtClusive page)
+                elements.artclusiveTab.classList.add('active');
+                elements.collectionTab.classList.remove('active');
+                if (elements.mainContent) elements.mainContent.style.display = 'none';
+                if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+                renderVaultPieces();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
         });
     }
 
@@ -586,6 +591,171 @@ function renderVaultPieces() {
             addToCart(id);
         });
     });
+}
+
+// --- STARBURST SUPERNOVA TRANSITION ENGINE ---
+let isStarburstActive = false;
+
+function triggerStarburstTransition(buttonRect, onPeak) {
+    if (isStarburstActive) return;
+    const canvas = elements.starburstCanvas;
+    if (!canvas) {
+        if (onPeak) onPeak();
+        return;
+    }
+
+    isStarburstActive = true;
+    canvas.classList.add('active');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const startX = buttonRect.left + buttonRect.width / 2;
+    const startY = buttonRect.top + buttonRect.height / 2;
+    const epicenterX = width / 2;
+    const epicenterY = height * 0.44;
+
+    const goldPalette = ['#FFF6D6', '#F7D974', '#D4AF37', '#E5C07B', '#B38F28'];
+
+    // 22 Launch Stars
+    const launchStars = [];
+    for (let i = 0; i < 22; i++) {
+        launchStars.push({
+            size: 14 + Math.random() * 16,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 8,
+            color: goldPalette[i % goldPalette.length],
+            trajOffsetX: (Math.random() - 0.5) * 120
+        });
+    }
+
+    // 36 Radial Sparks
+    const burstSparks = [];
+    for (let i = 0; i < 36; i++) {
+        const angle = (i / 36) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+        burstSparks.push({
+            angle: angle,
+            speed: 350 + Math.random() * 550,
+            size: 8 + Math.random() * 12,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 10,
+            color: goldPalette[i % goldPalette.length]
+        });
+    }
+
+    const duration = 750; // ms
+    const startTime = performance.now();
+    let peakFired = false;
+
+    function render(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        ctx.clearRect(0, 0, width, height);
+
+        // Check peak explosion trigger at t = 0.44 (~330ms)
+        if (progress >= 0.44 && !peakFired) {
+            peakFired = true;
+            if (onPeak) onPeak();
+        }
+
+        // Phase 1: Launch upward to epicenter (progress 0.0 -> 0.52)
+        if (progress < 0.52) {
+            const launchT = Math.min(progress / 0.48, 1);
+            const launchAlpha = Math.max(0, Math.min(1, 1 - (launchT - 0.65) / 0.35));
+
+            launchStars.forEach(star => {
+                const curX = startX + (epicenterX + star.trajOffsetX * (1 - launchT) - startX) * launchT;
+                const curY = startY + (epicenterY - startY) * (launchT * launchT);
+                const curSize = star.size * (0.8 + 0.6 * Math.sin(launchT * Math.PI));
+                const curRot = star.rotation + star.rotSpeed * launchT;
+
+                draw4PointStar(ctx, curX, curY, curSize, curRot, star.color, launchAlpha);
+            });
+        }
+
+        // Phase 2: Supernova Radial Starlight Veil & Shockwave (progress 0.38 -> 1.0)
+        if (progress >= 0.38) {
+            const burstT = (progress - 0.38) / 0.62;
+            const maxRadius = Math.hypot(width, height) * 0.95;
+            const curRadius = maxRadius * Math.sqrt(burstT);
+
+            let veilAlpha = 0;
+            if (burstT < 0.35) {
+                veilAlpha = Math.min(burstT / 0.35, 0.92);
+            } else {
+                veilAlpha = Math.max(0, 1 - (burstT - 0.35) / 0.65) * 0.92;
+            }
+
+            if (veilAlpha > 0.01) {
+                const grad = ctx.createRadialGradient(epicenterX, epicenterY, 0, epicenterX, epicenterY, curRadius);
+                grad.addColorStop(0, `rgba(255, 253, 245, ${veilAlpha * 0.95})`);
+                grad.addColorStop(0.3, `rgba(247, 217, 116, ${veilAlpha * 0.75})`);
+                grad.addColorStop(0.65, `rgba(212, 175, 55, ${veilAlpha * 0.45})`);
+                grad.addColorStop(0.9, `rgba(20, 19, 18, ${veilAlpha * 0.2})`);
+                grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(epicenterX, epicenterY, curRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Phase 3: Radial Sparks
+            if (progress >= 0.44) {
+                const sparkT = (progress - 0.44) / 0.52;
+                const sparkAlpha = Math.max(0, 1 - sparkT);
+
+                if (sparkAlpha > 0.02) {
+                    burstSparks.forEach(spark => {
+                        const dist = spark.speed * sparkT;
+                        const px = epicenterX + Math.cos(spark.angle) * dist;
+                        const py = epicenterY + Math.sin(spark.angle) * dist;
+                        const pSize = spark.size * (1 - sparkT * 0.4);
+                        const pRot = spark.rotation + spark.rotSpeed * sparkT;
+
+                        draw4PointStar(ctx, px, py, pSize, pRot, spark.color, sparkAlpha);
+                    });
+                }
+            }
+        }
+
+        if (progress < 1) {
+            requestAnimationFrame(render);
+        } else {
+            ctx.clearRect(0, 0, width, height);
+            canvas.classList.remove('active');
+            isStarburstActive = false;
+        }
+    }
+
+    requestAnimationFrame(render);
+}
+
+function draw4PointStar(ctx, cx, cy, radius, rotation, color, alpha) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+
+    const innerRadius = radius * 0.24;
+    ctx.beginPath();
+    ctx.moveTo(0, -radius);
+    ctx.quadraticCurveTo(0, -innerRadius, innerRadius, 0);
+    ctx.lineTo(radius, 0);
+    ctx.quadraticCurveTo(innerRadius, 0, 0, innerRadius);
+    ctx.lineTo(0, radius);
+    ctx.quadraticCurveTo(0, innerRadius, -innerRadius, 0);
+    ctx.lineTo(-radius, 0);
+    ctx.quadraticCurveTo(-innerRadius, 0, 0, -innerRadius);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
 }
 
 // Boot application
