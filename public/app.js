@@ -628,28 +628,42 @@ function triggerStarburstTransition(buttonRect, onPeak) {
         '#B38F28'  // Deep Antique Amber Gold
     ];
 
-    // 64 Staggered Launch Stars (Firecracker Fountain)
+    // 64 Staggered Launch Stars in a wide, spaced-out fan across 85% of screen width
     const launchStars = [];
     for (let i = 0; i < 64; i++) {
+        const baseSpread = -0.42 + (i / 63) * 0.84;
+        const fanSpread = Math.min(0.44, Math.max(-0.44, baseSpread + (Math.random() - 0.5) * 0.04));
+        const outwardSign = fanSpread >= 0 ? 1 : -1;
+
         launchStars.push({
             ignitionDelay: Math.random() * 0.16,
-            targetOffsetX: (Math.random() - 0.5) * 220,
+            fanSpreadFraction: fanSpread,
+            targetAltitudeFraction: 0.22 + Math.random() * 0.28,
             size: 10 + Math.random() * 18,
             rotationSpeed: (Math.random() - 0.5) * 9.42,
             baseRotation: Math.random() * Math.PI * 2,
             color: goldPalette[i % goldPalette.length],
-            arcCurveX: (Math.random() - 0.5) * 80
+            arcCurveX: outwardSign * (25 + Math.random() * 65)
         });
     }
 
-    // 88 Radial Supernova Fireworks Sparks with Gravity
+    // 88 Radial Supernova Fireworks Sparks stratified across 3 depth tiers
     const burstSparks = [];
     for (let i = 0; i < 88; i++) {
-        const angle = (i / 88) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+        const angle = (i / 88) * Math.PI * 2 + (Math.random() - 0.5) * 0.22;
+        let speedTier;
+        if (i % 3 === 0) {
+            speedTier = 220 + Math.random() * 180;
+        } else if (i % 3 === 1) {
+            speedTier = 420 + Math.random() * 220;
+        } else {
+            speedTier = 660 + Math.random() * 300;
+        }
+
         burstSparks.push({
             angle: angle,
-            speed: 280 + Math.random() * 680,
-            gravity: 260 + Math.random() * 220,
+            speed: speedTier,
+            gravity: 240 + Math.random() * 200,
             size: 6 + Math.random() * 13,
             rotationSpeed: (Math.random() - 0.5) * 12.56,
             baseRotation: Math.random() * Math.PI * 2,
@@ -667,13 +681,27 @@ function triggerStarburstTransition(buttonRect, onPeak) {
         const progress = Math.min(elapsed / duration, 1);
         ctx.clearRect(0, 0, width, height);
 
+        // Theatrical Backdrop Dimming (Progressive Obsidian Night-Sky Curtain)
+        let backdropDimAlpha = 0;
+        if (progress < 0.28) {
+            backdropDimAlpha = (progress / 0.28) * 0.82;
+        } else if (progress < 0.52) {
+            backdropDimAlpha = 0.82;
+        } else {
+            backdropDimAlpha = Math.max(0, (1 - (progress - 0.52) / 0.36) * 0.82);
+        }
+        if (backdropDimAlpha > 0.005) {
+            ctx.fillStyle = `rgba(7, 6, 5, ${backdropDimAlpha})`;
+            ctx.fillRect(0, 0, width, height);
+        }
+
         // Detonation peak trigger at t = 0.425 (~850ms) to unveil ArtClusive page under veil
         if (progress >= 0.425 && !peakFired) {
             peakFired = true;
             if (onPeak) onPeak();
         }
 
-        // Phase 1: Firecracker Fountain Ascent (progress 0.0 -> 0.52)
+        // Phase 1: Spaced-Out Firecracker Fountain Ascent (progress 0.0 -> 0.52)
         if (progress < 0.52) {
             launchStars.forEach(star => {
                 if (progress >= star.ignitionDelay) {
@@ -688,24 +716,27 @@ function triggerStarburstTransition(buttonRect, onPeak) {
                         starAlpha = Math.max(0, 1 - (rawT - 0.75) / 0.25);
                     }
 
-                    const currentX = startX + (epicenterX + star.targetOffsetX - startX) * starT + Math.sin(starT * Math.PI) * star.arcCurveX;
-                    const currentY = startY + (epicenterY - startY) * starT;
+                    const targetX = width * (0.5 + star.fanSpreadFraction);
+                    const targetY = height * star.targetAltitudeFraction;
+
+                    const currentX = startX + (targetX - startX) * starT + Math.sin(starT * Math.PI) * star.arcCurveX;
+                    const currentY = startY + (targetY - startY) * starT;
 
                     // Draw 2 glowing trail spark dots behind rocket star
                     if (rawT >= 0.1 && rawT <= 0.85 && starAlpha > 0.2) {
                         const trail1T = Math.max(0, starT - 0.05);
                         const trail2T = Math.max(0, starT - 0.10);
 
-                        const trail1X = startX + (epicenterX + star.targetOffsetX - startX) * trail1T;
-                        const trail1Y = startY + (epicenterY - startY) * trail1T;
+                        const trail1X = startX + (targetX - startX) * trail1T;
+                        const trail1Y = startY + (targetY - startY) * trail1T;
                         ctx.fillStyle = star.color;
                         ctx.globalAlpha = starAlpha * 0.45;
                         ctx.beginPath();
                         ctx.arc(trail1X, trail1Y, star.size * 0.28, 0, Math.PI * 2);
                         ctx.fill();
 
-                        const trail2X = startX + (epicenterX + star.targetOffsetX - startX) * trail2T;
-                        const trail2Y = startY + (epicenterY - startY) * trail2T;
+                        const trail2X = startX + (targetX - startX) * trail2T;
+                        const trail2Y = startY + (targetY - startY) * trail2T;
                         ctx.globalAlpha = starAlpha * 0.22;
                         ctx.beginPath();
                         ctx.arc(trail2X, trail2Y, star.size * 0.16, 0, Math.PI * 2);
