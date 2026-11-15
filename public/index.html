@@ -184,20 +184,18 @@
             <p class="consultation-sub">Reserve an exclusive 1-on-1 virtual consultation with our Master Weaver & Couture Stylist.</p>
             <div class="consultation-form">
                 <div class="form-group">
-                    <label>Your Name</label>
-                    <input type="text" id="consultName" placeholder="e.g. Radhika Sharma">
+                    <label>Your Full Name *</label>
+                    <input type="text" id="consultName" placeholder="e.g. Radhika Sharma" required>
+                    <span class="field-error" id="consultNameError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;">Full name is compulsory</span>
                 </div>
                 <div class="form-group">
-                    <label>Phone Number</label>
-                    <input type="tel" id="consultPhone" placeholder="+91 98765 43210">
+                    <label>Phone Number *</label>
+                    <input type="tel" id="consultPhone" placeholder="+91 98765 43210" required>
+                    <span class="field-error" id="consultPhoneError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;">Valid 10-digit phone number is compulsory</span>
                 </div>
                 <div class="form-group">
-                    <label>Preferred Weave</label>
-                    <select id="consultWeave">
-                        <option>Banarasi Kadwa Masterweave</option>
-                        <option>Kanchipuram Korvai Gold Zari</option>
-                        <option>Royal Rajputana Bridal Trousseau</option>
-                    </select>
+                    <label>Preferred Weave / Silhouette (Optional)</label>
+                    <input type="text" id="consultWeave" placeholder="e.g. Kanchipuram pure gold zari, Banarasi Kadwa, etc.">
                 </div>
                 <button class="consultation-submit-btn" id="submitConsultationBtn">CONFIRM CONSULTATION</button>
             </div>

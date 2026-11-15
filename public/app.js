@@ -543,6 +543,25 @@ function setupEventListeners() {
     // Consultation Modal
     if (elements.openConsultationBtn && elements.consultationOverlay) {
         elements.openConsultationBtn.addEventListener('click', () => {
+            const nameInput = document.getElementById('consultName');
+            const phoneInput = document.getElementById('consultPhone');
+            const nameError = document.getElementById('consultNameError');
+            const phoneError = document.getElementById('consultPhoneError');
+            if (nameError) nameError.style.display = 'none';
+            if (phoneError) phoneError.style.display = 'none';
+
+            // Auto-fetch profile name and number if user is logged in
+            const currentUser = auth.currentUser;
+            const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
+            const profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '+91 98765 43210';
+
+            if (nameInput && !nameInput.value.trim() && profileName) {
+                nameInput.value = profileName;
+            }
+            if (phoneInput && !phoneInput.value.trim() && profilePhone) {
+                phoneInput.value = profilePhone;
+            }
+
             elements.consultationOverlay.classList.add('open');
         });
     }
@@ -560,8 +579,37 @@ function setupEventListeners() {
     }
     if (elements.submitConsultationBtn && elements.consultationOverlay) {
         elements.submitConsultationBtn.addEventListener('click', () => {
+            const nameInput = document.getElementById('consultName');
+            const phoneInput = document.getElementById('consultPhone');
+            const weaveInput = document.getElementById('consultWeave');
+            const nameError = document.getElementById('consultNameError');
+            const phoneError = document.getElementById('consultPhoneError');
+
+            const name = nameInput ? nameInput.value.trim() : '';
+            const phone = phoneInput ? phoneInput.value.trim() : '';
+            const phoneDigits = phone.replace(/\D/g, '');
+
+            let isValid = true;
+            if (!name) {
+                if (nameError) nameError.style.display = 'block';
+                isValid = false;
+            } else {
+                if (nameError) nameError.style.display = 'none';
+            }
+
+            if (!phone || phoneDigits.length < 10) {
+                if (phoneError) phoneError.style.display = 'block';
+                isValid = false;
+            } else {
+                if (phoneError) phoneError.style.display = 'none';
+            }
+
+            if (!isValid) return;
+
+            const weave = weaveInput ? weaveInput.value.trim() : '';
+            const weaveSuffix = weave ? ` for "${weave}"` : '';
             elements.consultationOverlay.classList.remove('open');
-            alert('Consultation Confirmed! Our Master Atelier Concierge will connect with you shortly.');
+            alert(`Consultation Confirmed${weaveSuffix}! Our Master Atelier Concierge will connect with ${name} shortly.`);
         });
     }
 }
