@@ -1737,6 +1737,248 @@ body.artclusive-mode .brand-title {
     display: block;
 }
 
-.consultation-submit-btn:hover {
-    transform: scale(1.02);
+/* Quick Date Selection Chips */
+.quick-date-chips {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.quick-date-pill {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quick-date-pill:hover,
+.quick-date-pill.active {
+    border-color: var(--accent-gold);
+    color: var(--accent-gold);
+    background: rgba(212, 175, 55, 0.1);
+}
+
+/* Order & Consultation History Modal */
+.history-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 220;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    backdrop-filter: blur(4px);
+}
+
+.history-modal-overlay.open {
+    display: flex;
+}
+
+.history-modal {
+    background: var(--surface);
+    border: 1px solid var(--accent-gold);
+    border-radius: 20px;
+    max-width: 540px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    box-shadow: var(--shadow-floating);
+    animation: scaleIn 0.25s ease;
+    overflow: hidden;
+}
+
+.history-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.history-header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.history-header-title h3 {
+    font-family: var(--font-cinzel);
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: 0.8px;
+}
+
+.history-tab-switcher {
+    display: flex;
+    background: var(--canvas-bg);
+    border-radius: 24px;
+    padding: 4px;
+    margin-bottom: 18px;
+    border: 1px solid var(--border-subtle);
+}
+
+.history-tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.history-tab-btn.active {
+    background: var(--accent-gold);
+    color: #141312;
+}
+
+.history-tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.history-tab-content.active {
+    display: block;
+}
+
+.history-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-right: 4px;
+}
+
+.history-card {
+    background: var(--canvas-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.2s ease;
+}
+
+.history-card:hover {
+    border-color: rgba(212, 175, 55, 0.5);
+}
+
+.history-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.history-id {
+    font-size: 12px;
+    font-weight: 800;
+    font-family: var(--font-cinzel);
+    color: var(--accent-gold);
+}
+
+.status-badge {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+
+.status-badge.confirmed {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.4);
+}
+
+.status-badge.cancelled {
+    background: rgba(244, 67, 54, 0.15);
+    color: #f44336;
+    border: 1px solid rgba(244, 67, 54, 0.4);
+}
+
+.history-card-date {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.history-card-detail {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.history-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-subtle);
+}
+
+.cancel-apt-btn {
+    background: transparent;
+    border: 1px solid #f44336;
+    color: #f44336;
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cancel-apt-btn:hover {
+    background: #f44336;
+    color: #ffffff;
+}
+
+.cancel-apt-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    border-color: var(--border-subtle);
+    color: var(--text-secondary);
+}
+
+.history-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+}
+
+.history-empty-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+    opacity: 0.6;
+}
+
+.history-empty h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.history-empty p {
+    font-size: 11px;
+    line-height: 1.4;
 }

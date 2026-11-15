@@ -39,6 +39,11 @@
                     <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                 </button>
 
+                <!-- Order & Consultation History Button -->
+                <button class="icon-btn" id="historyHeaderBtn" title="Orders & Consultations History">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </button>
+
                 <!-- Wishlist Button -->
                 <button class="icon-btn" id="wishlistHeaderBtn" title="Wishlist">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
@@ -192,6 +197,15 @@
                     <label>Phone Number *</label>
                     <input type="tel" id="consultPhone" placeholder="e.g. 9876543210" maxlength="10" required>
                     <span class="field-error" id="consultPhoneError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;">Please enter a valid 10-digit mobile number (without +91)</span>
+                </div>
+                <div class="form-group">
+                    <label>Preferred Consultation Date *</label>
+                    <input type="date" id="consultDate" required>
+                    <span class="field-error" id="consultDateError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;">Please select a preferred date</span>
+                    <div class="quick-date-chips" style="display: flex; gap: 8px; margin-top: 6px;">
+                        <button type="button" class="quick-date-pill" id="chipDateTomorrow">Tomorrow</button>
+                        <button type="button" class="quick-date-pill" id="chipDateTwoDays">In 2 Days</button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Preferred Weave / Silhouette (Optional)</label>
@@ -457,6 +471,39 @@
                 <!-- Delivery & Items summary -->
             </div>
             <button class="return-store-btn" id="returnToStoreBtn">RETURN TO STORE</button>
+        </div>
+    </div>
+
+    <!-- Order & Consultation History Modal -->
+    <div class="history-modal-overlay" id="historyOverlay">
+        <div class="history-modal">
+            <div class="history-modal-header">
+                <div class="history-header-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    <h3>ORDER & CONSULTATION HISTORY</h3>
+                </div>
+                <button class="icon-btn" id="closeHistoryBtn">✕</button>
+            </div>
+
+            <!-- Tab Switcher -->
+            <div class="history-tab-switcher">
+                <button class="history-tab-btn active" id="tabAppointmentsBtn">APPOINTMENTS</button>
+                <button class="history-tab-btn" id="tabOrdersBtn">ORDERS</button>
+            </div>
+
+            <!-- Appointments Tab Content -->
+            <div class="history-tab-content active" id="tabAppointmentsContent">
+                <div id="appointmentsList" class="history-items-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Orders Tab Content -->
+            <div class="history-tab-content" id="tabOrdersContent" style="display: none;">
+                <div id="ordersList" class="history-items-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
         </div>
     </div>
 

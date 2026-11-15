@@ -83,6 +83,8 @@ const state = {
     selectedVariants: {}, // productId -> variantIndex
     wishlist: new Set(JSON.parse(localStorage.getItem('artpoure_wishlist') || '[]')),
     cart: JSON.parse(localStorage.getItem('artpoure_cart') || '[]'),
+    appointments: JSON.parse(localStorage.getItem('artpoure_appointments') || '[]'),
+    orders: JSON.parse(localStorage.getItem('artpoure_orders') || '[]'),
     theme: localStorage.getItem('artpoure_theme') || 'light',
     appliedPromoCode: localStorage.getItem('artpoure_promo_code') || null,
     selectedPaymentMethod: 'UPI'
@@ -157,7 +159,22 @@ const elements = {
     orderSuccessModal: document.getElementById('orderSuccessModal'),
     orderSuccessId: document.getElementById('orderSuccessId'),
     orderSuccessMeta: document.getElementById('orderSuccessMeta'),
-    returnToStoreBtn: document.getElementById('returnToStoreBtn')
+    returnToStoreBtn: document.getElementById('returnToStoreBtn'),
+    // Order & Consultation History Elements
+    historyHeaderBtn: document.getElementById('historyHeaderBtn'),
+    historyOverlay: document.getElementById('historyOverlay'),
+    closeHistoryBtn: document.getElementById('closeHistoryBtn'),
+    tabAppointmentsBtn: document.getElementById('tabAppointmentsBtn'),
+    tabOrdersBtn: document.getElementById('tabOrdersBtn'),
+    tabAppointmentsContent: document.getElementById('tabAppointmentsContent'),
+    tabOrdersContent: document.getElementById('tabOrdersContent'),
+    appointmentsList: document.getElementById('appointmentsList'),
+    ordersList: document.getElementById('ordersList'),
+    // Consultation Date Elements
+    consultDate: document.getElementById('consultDate'),
+    consultDateError: document.getElementById('consultDateError'),
+    chipDateTomorrow: document.getElementById('chipDateTomorrow'),
+    chipDateTwoDays: document.getElementById('chipDateTwoDays')
 };
 
 // --- INITIALIZATION ---
@@ -168,6 +185,8 @@ async function init() {
     await fetchCatalog();
     setupHeroShowcase();
     renderCatalog();
+    renderAppointmentsList();
+    renderOrdersList();
     updateBadges();
 }
 
@@ -723,6 +742,18 @@ function setupEventListeners() {
                 phoneInput.value = cleanProfilePhone;
             }
 
+            // Initialize consultation date to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+            const dateInput = document.getElementById('consultDate');
+            if (dateInput) {
+                dateInput.min = tomorrowStr;
+                if (!dateInput.value) {
+                    dateInput.value = tomorrowStr;
+                }
+            }
+
             elements.consultationOverlay.classList.add('open');
         });
     }
@@ -751,6 +782,47 @@ function setupEventListeners() {
         });
     }
 
+    const consultDateEl = document.getElementById('consultDate');
+    if (consultDateEl) {
+        consultDateEl.addEventListener('change', (e) => {
+            const dateError = document.getElementById('consultDateError');
+            if (e.target.value) {
+                if (dateError) dateError.style.display = 'none';
+                e.target.classList.remove('input-invalid');
+            }
+        });
+    }
+
+    const chipDateTomorrow = document.getElementById('chipDateTomorrow');
+    if (chipDateTomorrow) {
+        chipDateTomorrow.addEventListener('click', () => {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            const dateInput = document.getElementById('consultDate');
+            if (dateInput) {
+                dateInput.value = d.toISOString().split('T')[0];
+                const dateError = document.getElementById('consultDateError');
+                if (dateError) dateError.style.display = 'none';
+                dateInput.classList.remove('input-invalid');
+            }
+        });
+    }
+
+    const chipDateTwoDays = document.getElementById('chipDateTwoDays');
+    if (chipDateTwoDays) {
+        chipDateTwoDays.addEventListener('click', () => {
+            const d = new Date();
+            d.setDate(d.getDate() + 2);
+            const dateInput = document.getElementById('consultDate');
+            if (dateInput) {
+                dateInput.value = d.toISOString().split('T')[0];
+                const dateError = document.getElementById('consultDateError');
+                if (dateError) dateError.style.display = 'none';
+                dateInput.classList.remove('input-invalid');
+            }
+        });
+    }
+
     if (elements.closeConsultationBtn && elements.consultationOverlay) {
         elements.closeConsultationBtn.addEventListener('click', () => {
             elements.consultationOverlay.classList.remove('open');
@@ -763,17 +835,50 @@ function setupEventListeners() {
             }
         });
     }
+
+    // Order & Consultation History Header & Modal Listeners
+    if (elements.historyHeaderBtn) {
+        elements.historyHeaderBtn.addEventListener('click', () => {
+            openHistoryModal('appointments');
+        });
+    }
+    if (elements.closeHistoryBtn && elements.historyOverlay) {
+        elements.closeHistoryBtn.addEventListener('click', () => {
+            closeHistoryModal();
+        });
+    }
+    if (elements.historyOverlay) {
+        elements.historyOverlay.addEventListener('click', (e) => {
+            if (e.target === elements.historyOverlay) {
+                closeHistoryModal();
+            }
+        });
+    }
+    if (elements.tabAppointmentsBtn) {
+        elements.tabAppointmentsBtn.addEventListener('click', () => {
+            switchHistoryTab('appointments');
+        });
+    }
+    if (elements.tabOrdersBtn) {
+        elements.tabOrdersBtn.addEventListener('click', () => {
+            switchHistoryTab('orders');
+        });
+    }
+
     if (elements.submitConsultationBtn && elements.consultationOverlay) {
-        elements.submitConsultationBtn.addEventListener('click', () => {
+        elements.submitConsultationBtn.addEventListener('click', async () => {
             const nameInput = document.getElementById('consultName');
             const phoneInput = document.getElementById('consultPhone');
+            const dateInput = document.getElementById('consultDate');
             const weaveInput = document.getElementById('consultWeave');
             const nameError = document.getElementById('consultNameError');
             const phoneError = document.getElementById('consultPhoneError');
+            const dateError = document.getElementById('consultDateError');
 
             const name = nameInput ? nameInput.value.trim() : '';
             const phone = phoneInput ? phoneInput.value.trim() : '';
             const phoneDigits = phone.replace(/\D/g, '');
+            const date = dateInput ? dateInput.value.trim() : '';
 
             let isValid = true;
             if (!name) {
@@ -798,13 +903,44 @@ function setupEventListeners() {
                 if (phoneInput) phoneInput.classList.remove('input-invalid');
             }
 
+            // Preferred Consultation Date (Compulsory)
+            if (!date) {
+                if (dateError) dateError.style.display = 'block';
+                if (dateInput) dateInput.classList.add('input-invalid');
+                isValid = false;
+            } else {
+                if (dateError) dateError.style.display = 'none';
+                if (dateInput) dateInput.classList.remove('input-invalid');
+            }
+
             if (!isValid) return;
 
             const weave = weaveInput ? weaveInput.value.trim() : '';
             const weaveSuffix = weave ? ` for "${weave}"` : '';
+
+            const aptId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
+            const appointment = {
+                id: aptId,
+                clientName: name,
+                clientPhone: phone,
+                preferredDate: date,
+                preferredWeave: weave,
+                status: 'CONFIRMED',
+                bookedAt: new Date().toISOString()
+            };
+
+            state.appointments.unshift(appointment);
+            localStorage.setItem('artpoure_appointments', JSON.stringify(state.appointments));
+
+            try {
+                await setDoc(doc(db, "appointments", aptId), appointment);
+            } catch (err) {
+                console.warn("Firestore appointment sync fallback:", err);
+            }
+
             elements.consultationOverlay.classList.remove('open');
-            alert(`Consultation Confirmed${weaveSuffix}! Our Master Atelier Concierge will connect with ${name} shortly.`);
-        });
+            renderAppointmentsList();
+            alert(`Consultation Confirmed for ${date}${weaveSuffix}! View under Order & Consultation History.`);
         });
     }
 }
@@ -1161,6 +1297,11 @@ async function validateAndPlaceOrder() {
         console.warn("Firestore order sync fallback:", err);
     }
 
+    // Persist to local state & localStorage for instant Order History reflection
+    state.orders.unshift(orderPayload);
+    localStorage.setItem('artpoure_orders', JSON.stringify(state.orders));
+    renderOrdersList();
+
     // Display Luxury Order Confirmed Modal
     if (elements.orderSuccessId) {
         elements.orderSuccessId.textContent = `ORDER #${orderId}`;
@@ -1467,6 +1608,133 @@ function draw4PointStar(ctx, cx, cy, radius, rotation, color, alpha) {
     ctx.fill();
 
     ctx.restore();
+}
+
+// --- ORDER & CONSULTATION HISTORY CONTROLLER ---
+
+function openHistoryModal(activeTab = 'appointments') {
+    if (!elements.historyOverlay) return;
+    elements.historyOverlay.classList.add('open');
+    switchHistoryTab(activeTab);
+    renderAppointmentsList();
+    renderOrdersList();
+}
+
+function closeHistoryModal() {
+    if (elements.historyOverlay) {
+        elements.historyOverlay.classList.remove('open');
+    }
+}
+
+function switchHistoryTab(tab) {
+    if (tab === 'appointments') {
+        if (elements.tabAppointmentsBtn) elements.tabAppointmentsBtn.classList.add('active');
+        if (elements.tabOrdersBtn) elements.tabOrdersBtn.classList.remove('active');
+        if (elements.tabAppointmentsContent) elements.tabAppointmentsContent.style.display = 'block';
+        if (elements.tabOrdersContent) elements.tabOrdersContent.style.display = 'none';
+    } else {
+        if (elements.tabAppointmentsBtn) elements.tabAppointmentsBtn.classList.remove('active');
+        if (elements.tabOrdersBtn) elements.tabOrdersBtn.classList.add('active');
+        if (elements.tabAppointmentsContent) elements.tabAppointmentsContent.style.display = 'none';
+        if (elements.tabOrdersContent) elements.tabOrdersContent.style.display = 'block';
+    }
+}
+
+function renderAppointmentsList() {
+    const list = document.getElementById('appointmentsList');
+    if (!list) return;
+
+    if (!state.appointments || state.appointments.length === 0) {
+        list.innerHTML = `
+            <div class="history-empty">
+                <div class="history-empty-icon">📅</div>
+                <h4>No Consultation Appointments</h4>
+                <p>Book a bespoke 1-on-1 consultation with our Master Atelier to view your scheduled sessions here.</p>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = state.appointments.map(apt => {
+        const isCancelled = apt.status === 'CANCELLED';
+        const formattedDate = apt.preferredDate || 'Date Not Specified';
+        return `
+            <div class="history-card">
+                <div class="history-card-top">
+                    <span class="history-id">${apt.id}</span>
+                    <span class="status-badge ${isCancelled ? 'cancelled' : 'confirmed'}">
+                        ${apt.status}
+                    </span>
+                </div>
+                <div class="history-card-date">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    <span>Consultation Date: <strong>${formattedDate}</strong></span>
+                </div>
+                <div class="history-card-detail">
+                    <div><strong>Client:</strong> ${apt.clientName} (${apt.clientPhone})</div>
+                    ${apt.preferredWeave ? `<div><strong>Preferred Weave:</strong> ${apt.preferredWeave}</div>` : ''}
+                </div>
+                <div class="history-card-actions">
+                    <button class="cancel-apt-btn" ${isCancelled ? 'disabled' : ''} onclick="cancelConsultation('${apt.id}')">
+                        ${isCancelled ? 'CANCELLED' : 'CANCEL APPOINTMENT'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.cancelConsultation = async function(aptId) {
+    if (!confirm(`Are you sure you want to cancel appointment ${aptId}?`)) return;
+    const apt = state.appointments.find(a => a.id === aptId);
+    if (apt) {
+        apt.status = 'CANCELLED';
+        localStorage.setItem('artpoure_appointments', JSON.stringify(state.appointments));
+        try {
+            await setDoc(doc(db, "appointments", aptId), { status: 'CANCELLED' }, { merge: true });
+        } catch (e) {
+            console.warn("Firestore cancel appointment fallback:", e);
+        }
+        renderAppointmentsList();
+    }
+};
+
+function renderOrdersList() {
+    const list = document.getElementById('ordersList');
+    if (!list) return;
+
+    if (!state.orders || state.orders.length === 0) {
+        list.innerHTML = `
+            <div class="history-empty">
+                <div class="history-empty-icon">🛍️</div>
+                <h4>No Orders Placed Yet</h4>
+                <p>Explore our curated heritage pieces and place your first couture commission.</p>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = state.orders.map(order => {
+        const formattedDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recent';
+        const itemsSummary = (order.items || []).map(i => `${i.quantity}x ${i.title} (${i.variant || 'Standard'})`).join(', ');
+        const total = order.pricing ? order.pricing.grandTotal : 0;
+        return `
+            <div class="history-card">
+                <div class="history-card-top">
+                    <span class="history-id">${order.orderId}</span>
+                    <span class="status-badge confirmed">${order.status || 'CONFIRMED'}</span>
+                </div>
+                <div class="history-card-date">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    <span>${formattedDate} • <strong>₹${Number(total).toLocaleString('en-IN')}</strong> (${order.paymentMethod || 'UPI'})</span>
+                </div>
+                <div class="history-card-detail">
+                    <div><strong>Items:</strong> ${itemsSummary}</div>
+                    ${order.shippingAddress ? `<div><strong>Shipped to:</strong> ${order.shippingAddress.receiverName}, ${order.shippingAddress.city} - ${order.shippingAddress.pinCode}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 // Boot application
