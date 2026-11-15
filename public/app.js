@@ -83,7 +83,9 @@ const state = {
     selectedVariants: {}, // productId -> variantIndex
     wishlist: new Set(JSON.parse(localStorage.getItem('artpoure_wishlist') || '[]')),
     cart: JSON.parse(localStorage.getItem('artpoure_cart') || '[]'),
-    theme: localStorage.getItem('artpoure_theme') || 'light'
+    theme: localStorage.getItem('artpoure_theme') || 'light',
+    appliedPromoCode: localStorage.getItem('artpoure_promo_code') || null,
+    selectedPaymentMethod: 'UPI'
 };
 
 // --- DOM ELEMENTS ---
@@ -114,7 +116,48 @@ const elements = {
     cartTotalSum: document.getElementById('cartTotalSum'),
     starburstCanvas: document.getElementById('starburstCanvas'),
     brandTitle: document.querySelector('.brand-title'),
-    brandTagline: document.querySelector('.brand-tagline')
+    brandTagline: document.querySelector('.brand-tagline'),
+    // Checkout Elements (1:1 with Android CheckoutScreen.kt)
+    checkoutPage: document.getElementById('checkoutPage'),
+    checkoutBackBtn: document.getElementById('checkoutBackBtn'),
+    proceedCheckoutBtn: document.getElementById('proceedCheckoutBtn'),
+    checkoutReceiverName: document.getElementById('checkoutReceiverName'),
+    checkoutReceiverPhone: document.getElementById('checkoutReceiverPhone'),
+    checkoutHouseFlat: document.getElementById('checkoutHouseFlat'),
+    checkoutFloor: document.getElementById('checkoutFloor'),
+    checkoutStreet: document.getElementById('checkoutStreet'),
+    checkoutArea: document.getElementById('checkoutArea'),
+    checkoutCity: document.getElementById('checkoutCity'),
+    checkoutPinCode: document.getElementById('checkoutPinCode'),
+    errReceiverName: document.getElementById('errReceiverName'),
+    errReceiverPhone: document.getElementById('errReceiverPhone'),
+    errHouseFlat: document.getElementById('errHouseFlat'),
+    errStreet: document.getElementById('errStreet'),
+    errArea: document.getElementById('errArea'),
+    errCity: document.getElementById('errCity'),
+    errPinCode: document.getElementById('errPinCode'),
+    payOptionUpi: document.getElementById('payOptionUpi'),
+    payOptionCard: document.getElementById('payOptionCard'),
+    payOptionCod: document.getElementById('payOptionCod'),
+    upiInputBox: document.getElementById('upiInputBox'),
+    cardInputBox: document.getElementById('cardInputBox'),
+    checkoutUpiId: document.getElementById('checkoutUpiId'),
+    checkoutItemPreviews: document.getElementById('checkoutItemPreviews'),
+    checkoutPromoInput: document.getElementById('checkoutPromoInput'),
+    checkoutPromoBtn: document.getElementById('checkoutPromoBtn'),
+    promoFeedback: document.getElementById('promoFeedback'),
+    summarySubtotal: document.getElementById('summarySubtotal'),
+    summaryDiscountRow: document.getElementById('summaryDiscountRow'),
+    summaryPromoLabel: document.getElementById('summaryPromoLabel'),
+    summaryDiscount: document.getElementById('summaryDiscount'),
+    summaryShipping: document.getElementById('summaryShipping'),
+    summaryGrandTotal: document.getElementById('summaryGrandTotal'),
+    placeOrderBtn: document.getElementById('placeOrderBtn'),
+    placeOrderBtnText: document.getElementById('placeOrderBtnText'),
+    orderSuccessModal: document.getElementById('orderSuccessModal'),
+    orderSuccessId: document.getElementById('orderSuccessId'),
+    orderSuccessMeta: document.getElementById('orderSuccessMeta'),
+    returnToStoreBtn: document.getElementById('returnToStoreBtn')
 };
 
 // --- INITIALIZATION ---
@@ -502,6 +545,7 @@ function setupEventListeners() {
         if (elements.artclusiveTab) elements.artclusiveTab.classList.remove('active');
         if (elements.mainContent) elements.mainContent.style.display = 'block';
         if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
+        if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
         document.body.classList.remove('artclusive-mode');
         if (elements.brandTitle) elements.brandTitle.textContent = 'ARTPOURE';
         if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ETHNIC EDITORIAL';
@@ -517,6 +561,7 @@ function setupEventListeners() {
                 elements.collectionTab.classList.remove('active');
                 if (elements.mainContent) elements.mainContent.style.display = 'none';
                 if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+                if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
                 document.body.classList.add('artclusive-mode');
                 if (elements.brandTitle) elements.brandTitle.textContent = 'ARTCLUSIVE';
                 if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ATELIER & BESPOKE VAULT';
@@ -539,6 +584,93 @@ function setupEventListeners() {
             closeCartDrawer();
         }
     });
+
+    // Checkout Navigation & Interactions
+    if (elements.proceedCheckoutBtn) {
+        elements.proceedCheckoutBtn.addEventListener('click', () => {
+            openCheckoutScreen();
+        });
+    }
+
+    if (elements.checkoutBackBtn) {
+        elements.checkoutBackBtn.addEventListener('click', () => {
+            closeCheckoutScreen();
+        });
+    }
+
+    // Payment Option Switching
+    if (elements.payOptionUpi) {
+        elements.payOptionUpi.addEventListener('click', () => {
+            selectPaymentMethod('UPI');
+        });
+    }
+    if (elements.payOptionCard) {
+        elements.payOptionCard.addEventListener('click', () => {
+            selectPaymentMethod('CARD');
+        });
+    }
+    if (elements.payOptionCod) {
+        elements.payOptionCod.addEventListener('click', () => {
+            selectPaymentMethod('COD');
+        });
+    }
+
+    // Promo Code Application
+    if (elements.checkoutPromoBtn) {
+        elements.checkoutPromoBtn.addEventListener('click', () => {
+            applyCheckoutPromo();
+        });
+    }
+    if (elements.checkoutPromoInput) {
+        elements.checkoutPromoInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                applyCheckoutPromo();
+            }
+        });
+    }
+
+    // Place Order Validation & Submission
+    if (elements.placeOrderBtn) {
+        elements.placeOrderBtn.addEventListener('click', () => {
+            validateAndPlaceOrder();
+        });
+    }
+
+    // Return to Store from Order Success Modal
+    if (elements.returnToStoreBtn) {
+        elements.returnToStoreBtn.addEventListener('click', () => {
+            if (elements.orderSuccessModal) elements.orderSuccessModal.style.display = 'none';
+            closeCheckoutScreen();
+        });
+    }
+
+    // Live Input Validation Clearing (Ensures responsive error dismissal as user types)
+    const attachLiveValidator = (inputEl, errorEl, validatorFn) => {
+        if (!inputEl) return;
+        inputEl.addEventListener('input', () => {
+            if (validatorFn(inputEl.value)) {
+                inputEl.classList.remove('input-invalid');
+                if (errorEl) errorEl.style.display = 'none';
+            }
+        });
+    };
+
+    attachLiveValidator(elements.checkoutReceiverName, elements.errReceiverName, v => v.trim().length > 0);
+    attachLiveValidator(elements.checkoutReceiverPhone, elements.errReceiverPhone, v => v.replace(/\D/g, '').length >= 10);
+    attachLiveValidator(elements.checkoutHouseFlat, elements.errHouseFlat, v => v.trim().length > 0);
+    attachLiveValidator(elements.checkoutStreet, elements.errStreet, v => v.trim().length > 0);
+    attachLiveValidator(elements.checkoutArea, elements.errArea, v => v.trim().length > 0);
+    attachLiveValidator(elements.checkoutCity, elements.errCity, v => v.trim().length > 0);
+    if (elements.checkoutPinCode) {
+        elements.checkoutPinCode.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
+            if (/^\d{6}$/.test(e.target.value)) {
+                elements.checkoutPinCode.classList.remove('input-invalid');
+                if (elements.errPinCode) elements.errPinCode.style.display = 'none';
+            }
+        });
+    }
 
     // Consultation Modal
     if (elements.openConsultationBtn && elements.consultationOverlay) {
@@ -612,6 +744,388 @@ function setupEventListeners() {
             alert(`Consultation Confirmed${weaveSuffix}! Our Master Atelier Concierge will connect with ${name} shortly.`);
         });
     }
+}
+
+// --- CHECKOUT & VALIDATION ENGINE (1:1 with Android CheckoutScreen.kt) ---
+
+function openCheckoutScreen() {
+    if (state.cart.length === 0) {
+        alert("Your shopping bag is empty. Please select an artisanal weave to proceed.");
+        return;
+    }
+
+    closeCartDrawer();
+
+    if (elements.mainContent) elements.mainContent.style.display = 'none';
+    if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
+    if (elements.checkoutPage) elements.checkoutPage.style.display = 'block';
+
+    // Auto-fetch profile name and phone from Auth or LocalStorage if not already filled
+    const currentUser = auth.currentUser;
+    const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
+    const profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '+91 98765 43210';
+
+    if (elements.checkoutReceiverName && !elements.checkoutReceiverName.value.trim() && profileName) {
+        elements.checkoutReceiverName.value = profileName;
+    }
+    if (elements.checkoutReceiverPhone && !elements.checkoutReceiverPhone.value.trim() && profilePhone) {
+        elements.checkoutReceiverPhone.value = profilePhone;
+    }
+
+    // Load saved address from LocalStorage if available
+    try {
+        const savedAddr = JSON.parse(localStorage.getItem('artpoure_delivery_address') || '{}');
+        if (savedAddr.houseFlat && elements.checkoutHouseFlat && !elements.checkoutHouseFlat.value) {
+            elements.checkoutHouseFlat.value = savedAddr.houseFlat;
+        }
+        if (savedAddr.floor && elements.checkoutFloor && !elements.checkoutFloor.value) {
+            elements.checkoutFloor.value = savedAddr.floor;
+        }
+        if (savedAddr.street && elements.checkoutStreet && !elements.checkoutStreet.value) {
+            elements.checkoutStreet.value = savedAddr.street;
+        }
+        if (savedAddr.area && elements.checkoutArea && !elements.checkoutArea.value) {
+            elements.checkoutArea.value = savedAddr.area;
+        }
+        if (savedAddr.city && elements.checkoutCity && !elements.checkoutCity.value) {
+            elements.checkoutCity.value = savedAddr.city;
+        }
+        if (savedAddr.pinCode && elements.checkoutPinCode && !elements.checkoutPinCode.value) {
+            elements.checkoutPinCode.value = savedAddr.pinCode;
+        }
+    } catch (e) {
+        // Ignore JSON parse error
+    }
+
+    // Clear previous validation error highlights
+    clearCheckoutValidationErrors();
+
+    renderCheckoutSummary();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function closeCheckoutScreen() {
+    if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
+    if (document.body.classList.contains('artclusive-mode')) {
+        if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+    } else {
+        if (elements.mainContent) elements.mainContent.style.display = 'block';
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function clearCheckoutValidationErrors() {
+    const errorIds = [
+        'errReceiverName', 'errReceiverPhone', 'errHouseFlat',
+        'errStreet', 'errArea', 'errCity', 'errPinCode'
+    ];
+    errorIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+    const inputs = [
+        elements.checkoutReceiverName, elements.checkoutReceiverPhone,
+        elements.checkoutHouseFlat, elements.checkoutStreet,
+        elements.checkoutArea, elements.checkoutCity, elements.checkoutPinCode
+    ];
+    inputs.forEach(inp => {
+        if (inp) inp.classList.remove('input-invalid');
+    });
+}
+
+function renderCheckoutSummary() {
+    const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
+    const discount = state.appliedPromoCode === 'FIRST10' ? Math.round(subtotal * 0.10) : 0;
+    const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
+    const grandTotal = Math.max(0, subtotal - discount + shipping);
+
+    if (elements.checkoutItemPreviews) {
+        if (state.cart.length === 0) {
+            elements.checkoutItemPreviews.innerHTML = `
+                <div style="font-size: 11px; color: var(--text-secondary); padding: 12px 0;">No items in bag.</div>
+            `;
+        } else {
+            elements.checkoutItemPreviews.innerHTML = state.cart.map(item => `
+                <div class="checkout-item-preview">
+                    <img src="${item.variant.imageUrl}" alt="${item.product.fullName}">
+                    <div class="checkout-item-meta">
+                        <div class="item-title">${item.product.editorialTitle} • ${item.variant.colorName}</div>
+                        <div class="item-qty-price">Qty: ${item.quantity} × ₹${item.product.priceInr.toLocaleString('en-IN')} = ₹${(item.product.priceInr * item.quantity).toLocaleString('en-IN')}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+
+    if (elements.summarySubtotal) {
+        elements.summarySubtotal.textContent = `₹${subtotal.toLocaleString('en-IN')}`;
+    }
+
+    if (elements.summaryDiscountRow) {
+        if (discount > 0) {
+            elements.summaryDiscountRow.style.display = 'flex';
+            if (elements.summaryPromoLabel) elements.summaryPromoLabel.textContent = state.appliedPromoCode;
+            if (elements.summaryDiscount) elements.summaryDiscount.textContent = `-₹${discount.toLocaleString('en-IN')}`;
+        } else {
+            elements.summaryDiscountRow.style.display = 'none';
+        }
+    }
+
+    if (elements.summaryShipping) {
+        elements.summaryShipping.textContent = shipping === 0 ? 'FREE' : `₹${shipping}`;
+    }
+
+    if (elements.summaryGrandTotal) {
+        elements.summaryGrandTotal.textContent = `₹${grandTotal.toLocaleString('en-IN')}`;
+    }
+
+    if (elements.placeOrderBtnText) {
+        elements.placeOrderBtnText.textContent = `PAY ₹${grandTotal.toLocaleString('en-IN')} & CONFIRM ORDER`;
+    }
+}
+
+function applyCheckoutPromo() {
+    const code = elements.checkoutPromoInput ? elements.checkoutPromoInput.value.trim().toUpperCase() : '';
+    if (!elements.promoFeedback) return;
+
+    if (code === 'FIRST10') {
+        state.appliedPromoCode = 'FIRST10';
+        localStorage.setItem('artpoure_promo_code', 'FIRST10');
+        elements.promoFeedback.textContent = '10% FIRST ORDER PRIVILEGE APPLIED';
+        elements.promoFeedback.className = 'promo-feedback success';
+        elements.promoFeedback.style.display = 'block';
+        renderCheckoutSummary();
+    } else if (!code) {
+        state.appliedPromoCode = null;
+        localStorage.removeItem('artpoure_promo_code');
+        elements.promoFeedback.style.display = 'none';
+        renderCheckoutSummary();
+    } else {
+        elements.promoFeedback.textContent = 'INVALID PROMO VOUCHER CODE (Use "FIRST10")';
+        elements.promoFeedback.className = 'promo-feedback error';
+        elements.promoFeedback.style.display = 'block';
+    }
+}
+
+function selectPaymentMethod(method) {
+    state.selectedPaymentMethod = method;
+    [elements.payOptionUpi, elements.payOptionCard, elements.payOptionCod].forEach(tile => {
+        if (tile) tile.classList.remove('active');
+    });
+
+    if (method === 'UPI') {
+        if (elements.payOptionUpi) {
+            elements.payOptionUpi.classList.add('active');
+            const radio = elements.payOptionUpi.querySelector('input');
+            if (radio) radio.checked = true;
+        }
+        if (elements.upiInputBox) elements.upiInputBox.style.display = 'block';
+        if (elements.cardInputBox) elements.cardInputBox.style.display = 'none';
+    } else if (method === 'CARD') {
+        if (elements.payOptionCard) {
+            elements.payOptionCard.classList.add('active');
+            const radio = elements.payOptionCard.querySelector('input');
+            if (radio) radio.checked = true;
+        }
+        if (elements.upiInputBox) elements.upiInputBox.style.display = 'none';
+        if (elements.cardInputBox) elements.cardInputBox.style.display = 'block';
+    } else if (method === 'COD') {
+        if (elements.payOptionCod) {
+            elements.payOptionCod.classList.add('active');
+            const radio = elements.payOptionCod.querySelector('input');
+            if (radio) radio.checked = true;
+        }
+        if (elements.upiInputBox) elements.upiInputBox.style.display = 'none';
+        if (elements.cardInputBox) elements.cardInputBox.style.display = 'none';
+    }
+}
+
+async function validateAndPlaceOrder() {
+    if (state.cart.length === 0) {
+        alert("Your shopping bag is empty. Please add items before placing an order.");
+        return;
+    }
+
+    const receiverName = elements.checkoutReceiverName ? elements.checkoutReceiverName.value.trim() : '';
+    const receiverPhone = elements.checkoutReceiverPhone ? elements.checkoutReceiverPhone.value.trim() : '';
+    const phoneDigits = receiverPhone.replace(/\D/g, '');
+    const houseFlat = elements.checkoutHouseFlat ? elements.checkoutHouseFlat.value.trim() : '';
+    const floor = elements.checkoutFloor ? elements.checkoutFloor.value.trim() : '';
+    const street = elements.checkoutStreet ? elements.checkoutStreet.value.trim() : '';
+    const area = elements.checkoutArea ? elements.checkoutArea.value.trim() : '';
+    const city = elements.checkoutCity ? elements.checkoutCity.value.trim() : '';
+    const pinCode = elements.checkoutPinCode ? elements.checkoutPinCode.value.trim() : '';
+
+    let isValid = true;
+    let firstInvalid = null;
+
+    // Check Receiver Name
+    if (!receiverName) {
+        isValid = false;
+        if (elements.errReceiverName) elements.errReceiverName.style.display = 'block';
+        if (elements.checkoutReceiverName) elements.checkoutReceiverName.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutReceiverName;
+    } else {
+        if (elements.errReceiverName) elements.errReceiverName.style.display = 'none';
+        if (elements.checkoutReceiverName) elements.checkoutReceiverName.classList.remove('input-invalid');
+    }
+
+    // Check Receiver Phone (compulsory, min 10 digits)
+    if (!receiverPhone || phoneDigits.length < 10) {
+        isValid = false;
+        if (elements.errReceiverPhone) elements.errReceiverPhone.style.display = 'block';
+        if (elements.checkoutReceiverPhone) elements.checkoutReceiverPhone.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutReceiverPhone;
+    } else {
+        if (elements.errReceiverPhone) elements.errReceiverPhone.style.display = 'none';
+        if (elements.checkoutReceiverPhone) elements.checkoutReceiverPhone.classList.remove('input-invalid');
+    }
+
+    // Check House / Flat Number
+    if (!houseFlat) {
+        isValid = false;
+        if (elements.errHouseFlat) elements.errHouseFlat.style.display = 'block';
+        if (elements.checkoutHouseFlat) elements.checkoutHouseFlat.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutHouseFlat;
+    } else {
+        if (elements.errHouseFlat) elements.errHouseFlat.style.display = 'none';
+        if (elements.checkoutHouseFlat) elements.checkoutHouseFlat.classList.remove('input-invalid');
+    }
+
+    // Check Street Name
+    if (!street) {
+        isValid = false;
+        if (elements.errStreet) elements.errStreet.style.display = 'block';
+        if (elements.checkoutStreet) elements.checkoutStreet.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutStreet;
+    } else {
+        if (elements.errStreet) elements.errStreet.style.display = 'none';
+        if (elements.checkoutStreet) elements.checkoutStreet.classList.remove('input-invalid');
+    }
+
+    // Check Area / Locality
+    if (!area) {
+        isValid = false;
+        if (elements.errArea) elements.errArea.style.display = 'block';
+        if (elements.checkoutArea) elements.checkoutArea.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutArea;
+    } else {
+        if (elements.errArea) elements.errArea.style.display = 'none';
+        if (elements.checkoutArea) elements.checkoutArea.classList.remove('input-invalid');
+    }
+
+    // Check City
+    if (!city) {
+        isValid = false;
+        if (elements.errCity) elements.errCity.style.display = 'block';
+        if (elements.checkoutCity) elements.checkoutCity.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutCity;
+    } else {
+        if (elements.errCity) elements.errCity.style.display = 'none';
+        if (elements.checkoutCity) elements.checkoutCity.classList.remove('input-invalid');
+    }
+
+    // Check PinCode (exactly 6 digits)
+    if (!pinCode || !/^\d{6}$/.test(pinCode)) {
+        isValid = false;
+        if (elements.errPinCode) elements.errPinCode.style.display = 'block';
+        if (elements.checkoutPinCode) elements.checkoutPinCode.classList.add('input-invalid');
+        if (!firstInvalid) firstInvalid = elements.checkoutPinCode;
+    } else {
+        if (elements.errPinCode) elements.errPinCode.style.display = 'none';
+        if (elements.checkoutPinCode) elements.checkoutPinCode.classList.remove('input-invalid');
+    }
+
+    if (!isValid) {
+        if (firstInvalid) {
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            firstInvalid.focus();
+        }
+        return;
+    }
+
+    // Save details to localStorage
+    localStorage.setItem('user_profile_name', receiverName);
+    localStorage.setItem('user_profile_phone', receiverPhone);
+    localStorage.setItem('artpoure_delivery_address', JSON.stringify({
+        houseFlat, floor, street, area, city, pinCode
+    }));
+
+    // Calculate Final Pricing
+    const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
+    const discount = state.appliedPromoCode === 'FIRST10' ? Math.round(subtotal * 0.10) : 0;
+    const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
+    const grandTotal = Math.max(0, subtotal - discount + shipping);
+
+    const orderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const orderPayload = {
+        orderId,
+        items: state.cart.map(i => ({
+            productId: i.product.id,
+            title: i.product.editorialTitle,
+            variant: i.variant.colorName,
+            quantity: i.quantity,
+            priceInr: i.product.priceInr,
+            totalInr: i.product.priceInr * i.quantity
+        })),
+        pricing: {
+            subtotal,
+            discount,
+            shipping,
+            grandTotal,
+            promoCode: state.appliedPromoCode || null
+        },
+        shippingAddress: {
+            receiverName,
+            receiverPhone,
+            houseFlat,
+            floor,
+            street,
+            area,
+            city,
+            pinCode
+        },
+        paymentMethod: state.selectedPaymentMethod,
+        status: "CONFIRMED",
+        createdAt: new Date().toISOString()
+    };
+
+    // Sync to Firestore with fallback
+    try {
+        await setDoc(doc(db, "orders", orderId), orderPayload);
+    } catch (err) {
+        console.warn("Firestore order sync fallback:", err);
+    }
+
+    // Display Luxury Order Confirmed Modal
+    if (elements.orderSuccessId) {
+        elements.orderSuccessId.textContent = `ORDER #${orderId}`;
+    }
+    if (elements.orderSuccessMeta) {
+        elements.orderSuccessMeta.innerHTML = `
+            <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--accent-gold);">
+                DELIVERING TO: ${receiverName} (${receiverPhone})
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
+                ${houseFlat}${floor ? ', ' + floor : ''}, ${street}, ${area}, ${city} - ${pinCode}
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--text-primary);">
+                TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${state.selectedPaymentMethod})
+            </div>
+        `;
+    }
+    if (elements.orderSuccessModal) {
+        elements.orderSuccessModal.style.display = 'flex';
+    }
+
+    // Reset Cart
+    state.cart = [];
+    state.appliedPromoCode = null;
+    localStorage.removeItem('artpoure_cart');
+    localStorage.removeItem('artpoure_promo_code');
+    updateBadges();
+    renderCartDrawer();
 }
 
 // --- RENDER ARTCLUSIVE VAULT PIECES ---
