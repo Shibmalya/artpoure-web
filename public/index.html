@@ -118,12 +118,102 @@
         </section>
     </main>
 
-    <!-- Modern Floating Pill Bottom Navigation Panel -->
+    <!-- ArtClusive Dedicated Page (Haute Atelier & Bespoke Vault) -->
+    <section class="artclusive-page" id="artclusivePage" style="display: none;">
+        <!-- Atelier Hero Statement -->
+        <div class="atelier-hero-card">
+            <div class="atelier-badge">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                <span>ARTCLUSIVE • PRIVATE ATELIER</span>
+            </div>
+            <h1 class="atelier-title">Bespoke Weaves & Haute Couture</h1>
+            <p class="atelier-desc">
+                Exclusive one-of-one masterweaves directly commissionable with our master weavers in Varanasi and Kanchipuram. Incorporating certified pure silk, authentic silver zari, and 24k gold bath threads.
+            </p>
+            <button class="atelier-cta-btn" id="openConsultationBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                <span>BOOK PRIVATE CONSULTATION</span>
+            </button>
+        </div>
+
+        <!-- The Editorial Vault Showcase -->
+        <div class="vault-section">
+            <div class="vault-header-row">
+                <span class="vault-header-title">THE EDITORIAL VAULT</span>
+                <span class="vault-header-badge">LIMITED COMMISSIONS</span>
+            </div>
+            <div class="vault-grid" id="vaultGrid">
+                <!-- Dynamically populated by app.js -->
+            </div>
+        </div>
+
+        <!-- Atelier Privileges -->
+        <div class="privileges-section">
+            <h2 class="privileges-title">ATELIER PRIVILEGES</h2>
+            <div class="privilege-card">
+                <div class="privilege-icon">👑</div>
+                <div class="privilege-info">
+                    <h3>Direct Master Weaver Access</h3>
+                    <p>One-on-one virtual loom video session to personalize zari density, borders, and color palettes.</p>
+                </div>
+            </div>
+            <div class="privilege-card">
+                <div class="privilege-icon">✨</div>
+                <div class="privilege-info">
+                    <h3>Custom Gold Monogramming</h3>
+                    <p>Incorporate ancestral family crests or initials woven seamlessly into the saree pallu.</p>
+                </div>
+            </div>
+            <div class="privilege-card">
+                <div class="privilege-icon">🛡️</div>
+                <div class="privilege-info">
+                    <h3>Silk Mark & Hallmarking Certificate</h3>
+                    <p>Each bespoke piece arrives with sealed government laboratory certification and master weaver signature.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Consultation Modal -->
+    <div class="consultation-modal-overlay" id="consultationOverlay">
+        <div class="consultation-modal">
+            <div class="consultation-header">
+                <h3>ATELIER CONSULTATION</h3>
+                <button class="icon-btn" id="closeConsultationBtn">✕</button>
+            </div>
+            <p class="consultation-sub">Reserve an exclusive 1-on-1 virtual consultation with our Master Weaver & Couture Stylist.</p>
+            <div class="consultation-form">
+                <div class="form-group">
+                    <label>Your Name</label>
+                    <input type="text" id="consultName" placeholder="e.g. Radhika Sharma">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="tel" id="consultPhone" placeholder="+91 98765 43210">
+                </div>
+                <div class="form-group">
+                    <label>Preferred Weave</label>
+                    <select id="consultWeave">
+                        <option>Banarasi Kadwa Masterweave</option>
+                        <option>Kanchipuram Korvai Gold Zari</option>
+                        <option>Royal Rajputana Bridal Trousseau</option>
+                    </select>
+                </div>
+                <button class="consultation-submit-btn" id="submitConsultationBtn">CONFIRM CONSULTATION</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modern Floating Pill Bottom Navigation Panel (3 Tabs: COLLECTION • ARTCLUSIVE • BAG) -->
     <div class="bottom-nav-container">
         <div class="bottom-nav-pill" id="bottomNavPill">
             <button class="nav-tab active" id="collectionTab">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                 <span class="nav-tab-label">COLLECTION</span>
+            </button>
+            <button class="nav-tab" id="artclusiveTab">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                <span class="nav-tab-label">ARTCLUSIVE</span>
             </button>
             <button class="nav-tab" id="cartTab">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>

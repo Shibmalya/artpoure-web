@@ -100,7 +100,15 @@ const elements = {
     cartBadge: document.getElementById('cartBadge'),
     cartDrawerOverlay: document.getElementById('cartDrawerOverlay'),
     cartTab: document.getElementById('cartTab'),
+    artclusiveTab: document.getElementById('artclusiveTab'),
     collectionTab: document.getElementById('collectionTab'),
+    mainContent: document.querySelector('.main-content'),
+    artclusivePage: document.getElementById('artclusivePage'),
+    vaultGrid: document.getElementById('vaultGrid'),
+    openConsultationBtn: document.getElementById('openConsultationBtn'),
+    closeConsultationBtn: document.getElementById('closeConsultationBtn'),
+    consultationOverlay: document.getElementById('consultationOverlay'),
+    submitConsultationBtn: document.getElementById('submitConsultationBtn'),
     closeCartBtn: document.getElementById('closeCartBtn'),
     cartItemsList: document.getElementById('cartItemsList'),
     cartTotalSum: document.getElementById('cartTotalSum')
@@ -485,10 +493,25 @@ function setupEventListeners() {
         applyTheme(next);
     });
 
-    // Bottom Navigation
+    // Bottom Navigation switching between Collection & ArtClusive
     elements.collectionTab.addEventListener('click', () => {
+        elements.collectionTab.classList.add('active');
+        if (elements.artclusiveTab) elements.artclusiveTab.classList.remove('active');
+        if (elements.mainContent) elements.mainContent.style.display = 'block';
+        if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
+
+    if (elements.artclusiveTab) {
+        elements.artclusiveTab.addEventListener('click', () => {
+            elements.artclusiveTab.classList.add('active');
+            elements.collectionTab.classList.remove('active');
+            if (elements.mainContent) elements.mainContent.style.display = 'none';
+            if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+            renderVaultPieces();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
 
     elements.cartTab.addEventListener('click', () => {
         openCartDrawer();
@@ -502,6 +525,66 @@ function setupEventListeners() {
         if (e.target === elements.cartDrawerOverlay) {
             closeCartDrawer();
         }
+    });
+
+    // Consultation Modal
+    if (elements.openConsultationBtn && elements.consultationOverlay) {
+        elements.openConsultationBtn.addEventListener('click', () => {
+            elements.consultationOverlay.classList.add('open');
+        });
+    }
+    if (elements.closeConsultationBtn && elements.consultationOverlay) {
+        elements.closeConsultationBtn.addEventListener('click', () => {
+            elements.consultationOverlay.classList.remove('open');
+        });
+    }
+    if (elements.consultationOverlay) {
+        elements.consultationOverlay.addEventListener('click', (e) => {
+            if (e.target === elements.consultationOverlay) {
+                elements.consultationOverlay.classList.remove('open');
+            }
+        });
+    }
+    if (elements.submitConsultationBtn && elements.consultationOverlay) {
+        elements.submitConsultationBtn.addEventListener('click', () => {
+            elements.consultationOverlay.classList.remove('open');
+            alert('Consultation Confirmed! Our Master Atelier Concierge will connect with you shortly.');
+        });
+    }
+}
+
+// --- RENDER ARTCLUSIVE VAULT PIECES ---
+function renderVaultPieces() {
+    if (!elements.vaultGrid) return;
+    const vaultItems = state.products.filter(p => ["saree-01", "saree-02", "jewel-02", "clothes-01"].includes(p.id));
+    elements.vaultGrid.innerHTML = vaultItems.map(item => {
+        const variant = item.variants[0];
+        return `
+            <div class="vault-card">
+                <div class="vault-card-img-wrap" style="background-color: ${variant.canvasHex || '#2A2825'};">
+                    <span class="vault-tag">VAULT PIECE</span>
+                    <img src="${variant.imageUrl || item.imageUrl}" class="vault-card-img" alt="${item.fullName}">
+                </div>
+                <div class="vault-card-info">
+                    <div>
+                        <h3 class="vault-card-title">${item.editorialTitle}</h3>
+                        <p class="vault-card-sub">${item.fullName}</p>
+                    </div>
+                    <div class="vault-card-bottom">
+                        <span class="vault-card-price">₹${item.priceInr.toLocaleString('en-IN')}</span>
+                        <button class="vault-reserve-btn" data-reserve-id="${item.id}">RESERVE</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    elements.vaultGrid.querySelectorAll('.vault-reserve-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.reserveId;
+            addToCart(id);
+        });
     });
 }
 
