@@ -54,7 +54,7 @@
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
                     <span class="location-label">Delivering to</span>
                     <span style="opacity: 0.5;">•</span>
-                    <span class="location-value" id="currentAddress">SH 104, RK Hegde Nagar, Bangalore</span>
+                    <span class="location-value" id="currentAddress">289, Horamavu, Bengaluru</span>
                 </div>
                 <div class="location-change-tag">
                     <span>Change</span>
@@ -82,12 +82,12 @@
     <!-- Main Editorial Feed -->
     <main class="main-content">
 
-        <!-- 2026 Editorial Hero Showcase -->
+        <!-- 2026 Editorial Hero Showcase (Auto-Cycling with Animated Indicator Pills) -->
         <section class="hero-showcase">
             <div class="hero-card" id="heroCard">
                 <div class="hero-top-meta">
-                    <span>• NEW ARRIVALS • 2026 EDITORIAL</span>
-                    <span>01 / 05</span>
+                    <span><span style="color: var(--accent-gold); margin-right: 4px;">●</span> NEW ARRIVALS • 2026 EDITORIAL</span>
+                    <span id="heroPageCounter">01 / 04</span>
                 </div>
                 <div class="hero-image-wrap">
                     <img class="hero-model-img" id="heroModelImg" src="https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80" alt="Editorial Showcase">
@@ -99,7 +99,18 @@
                     <button class="hero-btn" id="heroCtaBtn">EXPLORE EDITORIAL</button>
                 </div>
             </div>
+
+            <!-- Animated Indicator Pills matching Android Jetpack Compose -->
+            <div class="hero-indicators" id="heroIndicators">
+                <!-- Dynamically populated by app.js -->
+            </div>
         </section>
+
+        <!-- Curated Collection Header Row matching Android HomeScreen -->
+        <div class="collection-header-row">
+            <span class="collection-header-title">CURATED COLLECTION</span>
+            <span class="collection-header-count" id="collectionCount">4 PIECES</span>
+        </div>
 
         <!-- Product Grid (Responsive 2 / 3 / 4 columns) -->
         <section class="product-grid" id="productGrid">

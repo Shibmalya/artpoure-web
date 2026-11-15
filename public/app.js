@@ -112,6 +112,7 @@ async function init() {
     setupScrollPhysics();
     setupEventListeners();
     await fetchCatalog();
+    setupHeroShowcase();
     renderCatalog();
     updateBadges();
 }
@@ -148,6 +149,11 @@ function renderCatalog() {
             item.editorialTitle.toLowerCase().includes(query);
         return matchesCategory && matchesSearch;
     });
+
+    const collectionCount = document.getElementById('collectionCount');
+    if (collectionCount) {
+        collectionCount.textContent = `${filtered.length} PIECES`;
+    }
 
     if (filtered.length === 0) {
         elements.productGrid.innerHTML = `
@@ -335,6 +341,86 @@ function updateBadges() {
     elements.wishlistBadge.textContent = state.wishlist.size;
     const cartCount = state.cart.reduce((sum, item) => sum + item.quantity, 0);
     elements.cartBadge.textContent = cartCount;
+}
+
+// --- AUTO-CYCLING NEW ARRIVALS HERO (Matches Android Jetpack Compose HorizontalPager) ---
+let heroCycleTimer = null;
+let currentHeroIndex = 0;
+
+function setupHeroShowcase() {
+    const heroCard = document.getElementById('heroCard');
+    const heroIndicators = document.getElementById('heroIndicators');
+    const collectionCount = document.getElementById('collectionCount');
+
+    if (!heroCard || state.products.length === 0) return;
+
+    if (collectionCount) {
+        collectionCount.textContent = `${state.products.length} PIECES`;
+    }
+
+    // Build indicators
+    if (heroIndicators) {
+        heroIndicators.innerHTML = state.products.map((_, i) => `
+            <div class="hero-indicator-dot ${i === currentHeroIndex ? 'active' : ''}" data-index="${i}"></div>
+        `).join('');
+
+        heroIndicators.querySelectorAll('.hero-indicator-dot').forEach(dot => {
+            dot.addEventListener('click', () => {
+                const idx = parseInt(dot.dataset.index, 10);
+                showHeroIndex(idx);
+                restartHeroCycle();
+            });
+        });
+    }
+
+    showHeroIndex(currentHeroIndex);
+    startHeroCycle();
+}
+
+function showHeroIndex(index) {
+    if (state.products.length === 0) return;
+    currentHeroIndex = (index + state.products.length) % state.products.length;
+    const product = state.products[currentHeroIndex];
+    const activeVarIdx = state.selectedVariants[product.id] || 0;
+    const variant = product.variants[activeVarIdx] || product.variants[0];
+
+    const heroCard = document.getElementById('heroCard');
+    const heroModelImg = document.getElementById('heroModelImg');
+    const heroTitle = document.getElementById('heroTitle');
+    const heroSub = document.getElementById('heroSub');
+    const heroPrice = document.getElementById('heroPrice');
+    const heroPageCounter = document.getElementById('heroPageCounter');
+
+    if (heroCard) heroCard.style.backgroundColor = variant.canvasHex || '#4A0E17';
+    if (heroTitle) heroTitle.textContent = product.editorialTitle;
+    if (heroSub) heroSub.textContent = product.details || product.fullName;
+    if (heroPrice) heroPrice.textContent = `₹${product.priceInr.toLocaleString('en-IN')}`;
+    if (heroPageCounter) {
+        const total = state.products.length.toString().padStart(2, '0');
+        const curr = (currentHeroIndex + 1).toString().padStart(2, '0');
+        heroPageCounter.textContent = `${curr} / ${total}`;
+    }
+    if (heroModelImg) {
+        heroModelImg.src = variant.imageUrl || product.imageUrl;
+        heroModelImg.alt = product.fullName;
+    }
+
+    // Update indicator dots
+    document.querySelectorAll('.hero-indicator-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === currentHeroIndex);
+    });
+}
+
+function startHeroCycle() {
+    if (heroCycleTimer) clearInterval(heroCycleTimer);
+    heroCycleTimer = setInterval(() => {
+        showHeroIndex(currentHeroIndex + 1);
+    }, 2800);
+}
+
+function restartHeroCycle() {
+    if (heroCycleTimer) clearInterval(heroCycleTimer);
+    startHeroCycle();
 }
 
 // --- SCROLL PHYSICS (Exact match to Android Header & Pill cascading collapse) ---
