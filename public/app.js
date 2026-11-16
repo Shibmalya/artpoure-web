@@ -87,7 +87,53 @@ const state = {
     orders: JSON.parse(localStorage.getItem('artpoure_orders') || '[]'),
     theme: localStorage.getItem('artpoure_theme') || 'light',
     appliedPromoCode: localStorage.getItem('artpoure_promo_code') || null,
-    selectedPaymentMethod: 'UPI'
+    selectedPaymentMethod: 'UPI',
+    deliveryAddress: JSON.parse(localStorage.getItem('artpoure_delivery_address') || 'null') || {
+        id: 'addr_home',
+        label: 'Home',
+        houseFlat: 'Flat 4B, Emerald Residency',
+        street: '289 Outer Ring Road',
+        area: 'Horamavu',
+        city: 'Bengaluru',
+        pinCode: '560043',
+        fullDisplay: '289, Horamavu, Bengaluru - 560043',
+        isGps: false
+    },
+    savedAddresses: JSON.parse(localStorage.getItem('artpoure_saved_address_list') || 'null') || [
+        {
+            id: 'addr_home',
+            label: 'Home',
+            houseFlat: 'Flat 4B, Emerald Residency',
+            floor: '4th Floor',
+            street: '289 Outer Ring Road',
+            area: 'Horamavu',
+            city: 'Bengaluru',
+            pinCode: '560043',
+            fullDisplay: 'Flat 4B, 289 Outer Ring Road, Horamavu, Bengaluru - 560043'
+        },
+        {
+            id: 'addr_work',
+            label: 'Work',
+            houseFlat: 'Level 8',
+            floor: '8th Floor',
+            street: 'Prestige Tech Park',
+            area: 'Kadubeesanahalli, Outer Ring Road',
+            city: 'Bengaluru',
+            pinCode: '560103',
+            fullDisplay: 'Level 8, Prestige Tech Park, Kadubeesanahalli, Bengaluru - 560103'
+        },
+        {
+            id: 'addr_other',
+            label: 'Studio',
+            houseFlat: 'Flat 4B',
+            floor: '4th Floor',
+            street: '74 Park Street',
+            area: 'South Bombay',
+            city: 'Mumbai',
+            pinCode: '400001',
+            fullDisplay: 'Flat 4B, 74 Park Street, South Bombay, Mumbai - 400001'
+        }
+    ]
 };
 
 // --- DOM ELEMENTS ---
@@ -176,7 +222,28 @@ const elements = {
     consultDate: document.getElementById('consultDate'),
     consultDateError: document.getElementById('consultDateError'),
     chipDateTomorrow: document.getElementById('chipDateTomorrow'),
-    chipDateTwoDays: document.getElementById('chipDateTwoDays')
+    chipDateTwoDays: document.getElementById('chipDateTwoDays'),
+    // Delivery Location & Saved Address Elements
+    locationLayer: document.getElementById('locationLayer'),
+    locationPill: document.getElementById('locationPill'),
+    currentAddress: document.getElementById('currentAddress'),
+    addressModalOverlay: document.getElementById('addressModalOverlay'),
+    closeAddressModalBtn: document.getElementById('closeAddressModalBtn'),
+    useCurrentLocationBtn: document.getElementById('useCurrentLocationBtn'),
+    gpsActiveBadge: document.getElementById('gpsActiveBadge'),
+    gpsStatusText: document.getElementById('gpsStatusText'),
+    gpsIconBubble: document.getElementById('gpsIconBubble'),
+    toggleAddAddressBtn: document.getElementById('toggleAddAddressBtn'),
+    newAddressForm: document.getElementById('newAddressForm'),
+    newAddrLabel: document.getElementById('newAddrLabel'),
+    newAddrHouse: document.getElementById('newAddrHouse'),
+    newAddrStreet: document.getElementById('newAddrStreet'),
+    newAddrArea: document.getElementById('newAddrArea'),
+    newAddrCity: document.getElementById('newAddrCity'),
+    newAddrPin: document.getElementById('newAddrPin'),
+    cancelNewAddrBtn: document.getElementById('cancelNewAddrBtn'),
+    saveNewAddrBtn: document.getElementById('saveNewAddrBtn'),
+    savedAddressesList: document.getElementById('savedAddressesList')
 };
 
 // --- INITIALIZATION ---
@@ -184,6 +251,7 @@ async function init() {
     applyTheme(state.theme);
     setupScrollPhysics();
     setupEventListeners();
+    updateCurrentAddressDisplay();
     await fetchCatalog();
     setupHeroShowcase();
     renderCatalog();
@@ -965,6 +1033,54 @@ function setupEventListeners() {
             alert(`Consultation Confirmed for ${date}${weaveSuffix}! View under Order & Consultation History.`);
         });
     }
+
+    // Delivery Location & Saved Address Listeners
+    if (elements.locationPill) {
+        elements.locationPill.addEventListener('click', () => {
+            openAddressModal();
+        });
+    }
+
+    if (elements.closeAddressModalBtn) {
+        elements.closeAddressModalBtn.addEventListener('click', () => {
+            closeAddressModal();
+        });
+    }
+
+    if (elements.addressModalOverlay) {
+        elements.addressModalOverlay.addEventListener('click', (e) => {
+            if (e.target === elements.addressModalOverlay) {
+                closeAddressModal();
+            }
+        });
+    }
+
+    if (elements.useCurrentLocationBtn) {
+        elements.useCurrentLocationBtn.addEventListener('click', () => {
+            useCurrentLocation();
+        });
+    }
+
+    if (elements.toggleAddAddressBtn && elements.newAddressForm) {
+        elements.toggleAddAddressBtn.addEventListener('click', () => {
+            const isHidden = elements.newAddressForm.style.display === 'none';
+            elements.newAddressForm.style.display = isHidden ? 'flex' : 'none';
+            elements.toggleAddAddressBtn.textContent = isHidden ? '− HIDE' : '+ ADD NEW';
+        });
+    }
+
+    if (elements.cancelNewAddrBtn && elements.newAddressForm) {
+        elements.cancelNewAddrBtn.addEventListener('click', () => {
+            elements.newAddressForm.style.display = 'none';
+            if (elements.toggleAddAddressBtn) elements.toggleAddAddressBtn.textContent = '+ ADD NEW';
+        });
+    }
+
+    if (elements.saveNewAddrBtn) {
+        elements.saveNewAddrBtn.addEventListener('click', () => {
+            saveNewCustomAddress();
+        });
+    }
 }
 
 // --- CHECKOUT & VALIDATION ENGINE (1:1 with Android CheckoutScreen.kt) ---
@@ -1287,9 +1403,16 @@ async function validateAndPlaceOrder() {
     // Save details to localStorage
     localStorage.setItem('user_profile_name', receiverName);
     localStorage.setItem('user_profile_phone', receiverPhone);
-    localStorage.setItem('artpoure_delivery_address', JSON.stringify({
-        houseFlat, floor, street, area, city, pinCode
-    }));
+    const updatedAddrObj = {
+        id: 'addr_checkout',
+        label: 'Order Address',
+        houseFlat, floor, street, area, city, pinCode,
+        fullDisplay: `${houseFlat}${floor ? ', ' + floor : ''}, ${street}, ${area}, ${city} - ${pinCode}`,
+        isGps: false
+    };
+    state.deliveryAddress = updatedAddrObj;
+    localStorage.setItem('artpoure_delivery_address', JSON.stringify(updatedAddrObj));
+    updateCurrentAddressDisplay();
 
     // Calculate Final Pricing
     const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
@@ -1774,6 +1897,206 @@ function renderOrdersList() {
             </div>
         `;
     }).join('');
+}
+
+// --- DELIVERY LOCATION & SAVED ADDRESSES ENGINE (1:1 with Android SavedAddressesSheet.kt) ---
+
+function updateCurrentAddressDisplay() {
+    if (!elements.currentAddress) return;
+    const addr = state.deliveryAddress;
+    if (!addr) {
+        elements.currentAddress.textContent = "289, Horamavu, Bengaluru";
+        return;
+    }
+    const shortText = addr.fullDisplay || `${addr.area || addr.street || ''}, ${addr.city || 'Bengaluru'}`;
+    elements.currentAddress.textContent = shortText;
+    elements.currentAddress.title = shortText;
+}
+
+function openAddressModal() {
+    if (!elements.addressModalOverlay) return;
+    renderSavedAddressesList();
+    updateGpsIndicator();
+    if (elements.newAddressForm) elements.newAddressForm.style.display = 'none';
+    if (elements.toggleAddAddressBtn) elements.toggleAddAddressBtn.textContent = '+ ADD NEW';
+    elements.addressModalOverlay.classList.add('open');
+}
+
+function closeAddressModal() {
+    if (!elements.addressModalOverlay) return;
+    elements.addressModalOverlay.classList.remove('open');
+}
+
+function updateGpsIndicator() {
+    const isGps = state.deliveryAddress && state.deliveryAddress.isGps;
+    if (elements.gpsActiveBadge) elements.gpsActiveBadge.style.display = isGps ? 'inline-block' : 'none';
+    if (elements.gpsIconBubble) {
+        if (isGps) elements.gpsIconBubble.classList.add('active');
+        else elements.gpsIconBubble.classList.remove('active');
+    }
+    if (elements.gpsStatusText) {
+        elements.gpsStatusText.textContent = isGps
+            ? `Active: ${state.deliveryAddress.fullDisplay}`
+            : 'Detect live geolocation using device GPS';
+    }
+}
+
+function selectDeliveryAddress(addr) {
+    state.deliveryAddress = addr;
+    localStorage.setItem('artpoure_delivery_address', JSON.stringify(addr));
+    updateCurrentAddressDisplay();
+    updateGpsIndicator();
+
+    // Sync to checkout inputs if user navigates to checkout
+    if (elements.checkoutHouseFlat && addr.houseFlat) elements.checkoutHouseFlat.value = addr.houseFlat;
+    if (elements.checkoutFloor && addr.floor) elements.checkoutFloor.value = addr.floor;
+    if (elements.checkoutStreet && addr.street) elements.checkoutStreet.value = addr.street;
+    if (elements.checkoutArea && addr.area) elements.checkoutArea.value = addr.area;
+    if (elements.checkoutCity && addr.city) elements.checkoutCity.value = addr.city;
+    if (elements.checkoutPinCode && addr.pinCode) elements.checkoutPinCode.value = addr.pinCode;
+
+    renderSavedAddressesList();
+    setTimeout(() => {
+        closeAddressModal();
+    }, 250);
+}
+
+function renderSavedAddressesList() {
+    if (!elements.savedAddressesList) return;
+    const currentId = state.deliveryAddress ? (state.deliveryAddress.id || state.deliveryAddress.fullDisplay) : null;
+
+    elements.savedAddressesList.innerHTML = state.savedAddresses.map(addr => {
+        const isSelected = (!state.deliveryAddress?.isGps) && (addr.id === currentId || addr.fullDisplay === state.deliveryAddress?.fullDisplay);
+        return `
+            <div class="saved-address-card ${isSelected ? 'selected' : ''}" data-addr-id="${addr.id}">
+                <div class="saved-addr-left">
+                    <div class="saved-addr-top">
+                        <span class="saved-addr-label">${addr.label.toUpperCase()}</span>
+                        ${isSelected ? '<span class="saved-addr-tag-active">ACTIVE POINT</span>' : ''}
+                    </div>
+                    <div class="saved-addr-text">${addr.fullDisplay}</div>
+                    <div class="saved-addr-sub">${addr.city} • Pincode: ${addr.pinCode}</div>
+                </div>
+                <div class="saved-addr-radio"></div>
+            </div>
+        `;
+    }).join('');
+
+    elements.savedAddressesList.querySelectorAll('.saved-address-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const addrId = card.getAttribute('data-addr-id');
+            const found = state.savedAddresses.find(a => a.id === addrId);
+            if (found) {
+                selectDeliveryAddress({ ...found, isGps: false });
+            }
+        });
+    });
+}
+
+function saveNewCustomAddress() {
+    const label = (elements.newAddrLabel?.value.trim()) || 'Studio';
+    const house = elements.newAddrHouse?.value.trim() || '';
+    const street = elements.newAddrStreet?.value.trim() || '';
+    const area = elements.newAddrArea?.value.trim() || '';
+    const city = elements.newAddrCity?.value.trim() || 'Bengaluru';
+    const pin = elements.newAddrPin?.value.trim() || '';
+
+    if (!house || !street || !area || !pin) {
+        alert("Please complete House/Flat, Street, Area and 6-digit Pincode.");
+        return;
+    }
+
+    const newId = `addr_custom_${Date.now()}`;
+    const fullDisplay = `${house}, ${street}, ${area}, ${city} - ${pin}`;
+    const newAddr = {
+        id: newId,
+        label,
+        houseFlat: house,
+        street,
+        area,
+        city,
+        pinCode: pin,
+        fullDisplay,
+        isGps: false
+    };
+
+    state.savedAddresses.push(newAddr);
+    localStorage.setItem('artpoure_saved_address_list', JSON.stringify(state.savedAddresses));
+    selectDeliveryAddress(newAddr);
+}
+
+function useCurrentLocation() {
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser. Please choose from saved addresses.");
+        return;
+    }
+
+    if (elements.gpsStatusText) elements.gpsStatusText.textContent = "Acquiring live GPS satellite coordinates...";
+    if (elements.gpsIconBubble) elements.gpsIconBubble.classList.add('active');
+
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            try {
+                // Reverse geocoding via OpenStreetMap Nominatim
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const addr = data.address || {};
+                    const area = addr.suburb || addr.neighbourhood || addr.residential || addr.city_district || "Outer Ring Road";
+                    const city = addr.city || addr.town || addr.county || "Bengaluru";
+                    const pin = addr.postcode || "560043";
+                    const street = addr.road || "Main Road";
+                    const house = addr.house_number || "Plot 289";
+                    const liveAddr = {
+                        id: 'addr_gps_live',
+                        label: 'Live GPS',
+                        houseFlat: house,
+                        street,
+                        area,
+                        city,
+                        pinCode: pin,
+                        fullDisplay: `${area}, ${city} - ${pin}`,
+                        isGps: true,
+                        latitude: lat,
+                        longitude: lng
+                    };
+                    selectDeliveryAddress(liveAddr);
+                    return;
+                }
+            } catch (err) {
+                console.warn("Reverse geocode network fallback:", err);
+            }
+
+            // Fallback coordinate representation
+            const fallbackGpsAddr = {
+                id: 'addr_gps_live',
+                label: 'Current Location',
+                houseFlat: 'Live Coordinate',
+                street: `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`,
+                area: 'Bengaluru Urban',
+                city: 'Bengaluru',
+                pinCode: '560001',
+                fullDisplay: `Bengaluru (${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E)`,
+                isGps: true,
+                latitude: lat,
+                longitude: lng
+            };
+            selectDeliveryAddress(fallbackGpsAddr);
+        },
+        (error) => {
+            console.warn("Geolocation error:", error);
+            if (elements.gpsStatusText) {
+                elements.gpsStatusText.textContent = "Location permission denied. Please select a saved address.";
+            }
+            if (elements.gpsIconBubble) elements.gpsIconBubble.classList.remove('active');
+            setTimeout(() => {
+                if (elements.gpsStatusText) elements.gpsStatusText.textContent = "Detect live geolocation using device GPS";
+            }, 3500);
+        },
+        { timeout: 10000, enableHighAccuracy: true }
+    );
 }
 
 // Boot application
