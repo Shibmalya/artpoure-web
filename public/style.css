@@ -898,13 +898,55 @@ body {
 /* ==========================================================================
    CHECKOUT SCREEN & ORDER CONFIRMATION
    ========================================================================== */
+body.checkout-mode .header-wrapper,
+body.checkout-mode .bottom-nav-container {
+    display: none !important;
+}
+
+body.checkout-mode .checkout-page {
+    display: block !important;
+    min-height: 100vh;
+}
+
 .checkout-page {
     position: relative;
     z-index: 10;
     max-width: 1200px;
     margin: 0 auto;
-    padding: 24px 20px 140px;
+    padding: 32px 20px 140px;
     animation: fadeInScale 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.checkout-empty-state {
+    text-align: center;
+    padding: 60px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    max-width: 520px;
+    margin: 40px auto;
+    box-shadow: var(--shadow-soft);
+}
+
+.checkout-empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.checkout-empty-state h2 {
+    font-family: var(--font-cinzel);
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+}
+
+.checkout-empty-state p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 24px;
 }
 
 .checkout-header-bar {

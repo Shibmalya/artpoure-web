@@ -121,6 +121,8 @@ const elements = {
     brandTagline: document.querySelector('.brand-tagline'),
     // Checkout Elements (1:1 with Android CheckoutScreen.kt)
     checkoutPage: document.getElementById('checkoutPage'),
+    checkoutEmptyState: document.getElementById('checkoutEmptyState'),
+    checkoutEmptyBrowseBtn: document.getElementById('checkoutEmptyBrowseBtn'),
     checkoutBackBtn: document.getElementById('checkoutBackBtn'),
     proceedCheckoutBtn: document.getElementById('proceedCheckoutBtn'),
     checkoutReceiverName: document.getElementById('checkoutReceiverName'),
@@ -590,6 +592,7 @@ function setupEventListeners() {
         if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
         if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
         document.body.classList.remove('artclusive-mode');
+        document.body.classList.remove('checkout-mode');
         if (elements.brandTitle) elements.brandTitle.textContent = 'ARTPOURE';
         if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ETHNIC EDITORIAL';
         updateAmbientVideo();
@@ -607,6 +610,7 @@ function setupEventListeners() {
                 if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
                 if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
                 document.body.classList.add('artclusive-mode');
+                document.body.classList.remove('checkout-mode');
                 if (elements.brandTitle) elements.brandTitle.textContent = 'ARTCLUSIVE';
                 if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ATELIER & BESPOKE VAULT';
                 updateAmbientVideo();
@@ -617,7 +621,11 @@ function setupEventListeners() {
     }
 
     elements.cartTab.addEventListener('click', () => {
-        openCartDrawer();
+        if (state.cart.length > 0) {
+            openCheckoutScreen();
+        } else {
+            openCartDrawer();
+        }
     });
 
     elements.closeCartBtn.addEventListener('click', () => {
@@ -639,6 +647,12 @@ function setupEventListeners() {
 
     if (elements.checkoutBackBtn) {
         elements.checkoutBackBtn.addEventListener('click', () => {
+            closeCheckoutScreen();
+        });
+    }
+
+    if (elements.checkoutEmptyBrowseBtn) {
+        elements.checkoutEmptyBrowseBtn.addEventListener('click', () => {
             closeCheckoutScreen();
         });
     }
@@ -702,7 +716,15 @@ function setupEventListeners() {
     };
 
     attachLiveValidator(elements.checkoutReceiverName, elements.errReceiverName, v => v.trim().length > 0);
-    attachLiveValidator(elements.checkoutReceiverPhone, elements.errReceiverPhone, v => v.replace(/\D/g, '').length >= 10);
+    if (elements.checkoutReceiverPhone) {
+        elements.checkoutReceiverPhone.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+            if (/^\d{10}$/.test(e.target.value)) {
+                elements.checkoutReceiverPhone.classList.remove('input-invalid');
+                if (elements.errReceiverPhone) elements.errReceiverPhone.style.display = 'none';
+            }
+        });
+    }
     attachLiveValidator(elements.checkoutHouseFlat, elements.errHouseFlat, v => v.trim().length > 0);
     attachLiveValidator(elements.checkoutStreet, elements.errStreet, v => v.trim().length > 0);
     attachLiveValidator(elements.checkoutArea, elements.errArea, v => v.trim().length > 0);
@@ -948,49 +970,67 @@ function setupEventListeners() {
 // --- CHECKOUT & VALIDATION ENGINE (1:1 with Android CheckoutScreen.kt) ---
 
 function openCheckoutScreen() {
-    if (state.cart.length === 0) {
-        alert("Your shopping bag is empty. Please select an artisanal weave to proceed.");
-        return;
-    }
-
     closeCartDrawer();
+    document.body.classList.add('checkout-mode');
 
     if (elements.mainContent) elements.mainContent.style.display = 'none';
     if (elements.artclusivePage) elements.artclusivePage.style.display = 'none';
     if (elements.checkoutPage) elements.checkoutPage.style.display = 'block';
 
+    const checkoutContainer = document.querySelector('.checkout-container');
+
+    if (state.cart.length === 0) {
+        if (elements.checkoutEmptyState) elements.checkoutEmptyState.style.display = 'block';
+        if (checkoutContainer) checkoutContainer.style.display = 'none';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    if (elements.checkoutEmptyState) elements.checkoutEmptyState.style.display = 'none';
+    if (checkoutContainer) checkoutContainer.style.display = 'grid';
+
     // Auto-fetch profile name and phone from Auth or LocalStorage if not already filled
     const currentUser = auth.currentUser;
     const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
-    const profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '+91 98765 43210';
+    let profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '9876543210';
+    profilePhone = profilePhone.replace(/\D/g, '');
+    if (profilePhone.length === 12 && profilePhone.startsWith('91')) {
+        profilePhone = profilePhone.slice(2);
+    }
+    if (profilePhone.length > 10) {
+        profilePhone = profilePhone.slice(-10);
+    }
+    if (!profilePhone) {
+        profilePhone = '9876543210';
+    }
 
     if (elements.checkoutReceiverName && !elements.checkoutReceiverName.value.trim() && profileName) {
         elements.checkoutReceiverName.value = profileName;
     }
-    if (elements.checkoutReceiverPhone && !elements.checkoutReceiverPhone.value.trim() && profilePhone) {
+    if (elements.checkoutReceiverPhone && !elements.checkoutReceiverPhone.value.trim()) {
         elements.checkoutReceiverPhone.value = profilePhone;
     }
 
-    // Load saved address from LocalStorage if available
+    // Load saved address from LocalStorage if available or sensible defaults
     try {
         const savedAddr = JSON.parse(localStorage.getItem('artpoure_delivery_address') || '{}');
-        if (savedAddr.houseFlat && elements.checkoutHouseFlat && !elements.checkoutHouseFlat.value) {
-            elements.checkoutHouseFlat.value = savedAddr.houseFlat;
+        if (elements.checkoutHouseFlat && !elements.checkoutHouseFlat.value) {
+            elements.checkoutHouseFlat.value = savedAddr.houseFlat || 'Flat 4B, Emerald Residency';
         }
-        if (savedAddr.floor && elements.checkoutFloor && !elements.checkoutFloor.value) {
-            elements.checkoutFloor.value = savedAddr.floor;
+        if (elements.checkoutFloor && !elements.checkoutFloor.value) {
+            elements.checkoutFloor.value = savedAddr.floor || '4th Floor';
         }
-        if (savedAddr.street && elements.checkoutStreet && !elements.checkoutStreet.value) {
-            elements.checkoutStreet.value = savedAddr.street;
+        if (elements.checkoutStreet && !elements.checkoutStreet.value) {
+            elements.checkoutStreet.value = savedAddr.street || '289 Outer Ring Road';
         }
-        if (savedAddr.area && elements.checkoutArea && !elements.checkoutArea.value) {
-            elements.checkoutArea.value = savedAddr.area;
+        if (elements.checkoutArea && !elements.checkoutArea.value) {
+            elements.checkoutArea.value = savedAddr.area || 'Horamavu';
         }
-        if (savedAddr.city && elements.checkoutCity && !elements.checkoutCity.value) {
-            elements.checkoutCity.value = savedAddr.city;
+        if (elements.checkoutCity && !elements.checkoutCity.value) {
+            elements.checkoutCity.value = savedAddr.city || 'Bengaluru';
         }
-        if (savedAddr.pinCode && elements.checkoutPinCode && !elements.checkoutPinCode.value) {
-            elements.checkoutPinCode.value = savedAddr.pinCode;
+        if (elements.checkoutPinCode && !elements.checkoutPinCode.value) {
+            elements.checkoutPinCode.value = savedAddr.pinCode || '560043';
         }
     } catch (e) {
         // Ignore JSON parse error
@@ -1004,6 +1044,7 @@ function openCheckoutScreen() {
 }
 
 function closeCheckoutScreen() {
+    document.body.classList.remove('checkout-mode');
     if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
     if (document.body.classList.contains('artclusive-mode')) {
         if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
@@ -1169,8 +1210,8 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutReceiverName) elements.checkoutReceiverName.classList.remove('input-invalid');
     }
 
-    // Check Receiver Phone (compulsory, min 10 digits)
-    if (!receiverPhone || phoneDigits.length < 10) {
+    // Check Receiver Phone (compulsory, strictly 10 digits, no +91)
+    if (!receiverPhone || !/^\d{10}$/.test(receiverPhone)) {
         isValid = false;
         if (elements.errReceiverPhone) elements.errReceiverPhone.style.display = 'block';
         if (elements.checkoutReceiverPhone) elements.checkoutReceiverPhone.classList.add('input-invalid');
@@ -1290,12 +1331,10 @@ async function validateAndPlaceOrder() {
         createdAt: new Date().toISOString()
     };
 
-    // Sync to Firestore with fallback
-    try {
-        await setDoc(doc(db, "orders", orderId), orderPayload);
-    } catch (err) {
+    // Non-blocking Firestore sync with fallback
+    setDoc(doc(db, "orders", orderId), orderPayload).catch(err => {
         console.warn("Firestore order sync fallback:", err);
-    }
+    });
 
     // Persist to local state & localStorage for instant Order History reflection
     state.orders.unshift(orderPayload);

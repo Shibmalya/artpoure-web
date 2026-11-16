@@ -270,6 +270,14 @@
             </div>
         </div>
 
+        <!-- Empty Cart Notice in Checkout -->
+        <div class="checkout-empty-state" id="checkoutEmptyState" style="display: none;">
+            <div class="checkout-empty-icon">🛍️</div>
+            <h2>YOUR SHOPPING BAG IS EMPTY</h2>
+            <p>Select an exquisite handwoven Banarasi or Kanjeevaram masterpiece from our collection to complete your checkout.</p>
+            <button class="return-store-btn" id="checkoutEmptyBrowseBtn">EXPLORE CURATED COLLECTION</button>
+        </div>
+
         <div class="checkout-container">
             <!-- Left Column: Shipping Details & Payment -->
             <div class="checkout-main-col">
@@ -289,8 +297,8 @@
                         </div>
                         <div class="form-group flex-1">
                             <label>Receiver Phone Number *</label>
-                            <input type="tel" id="checkoutReceiverPhone" placeholder="+91 98765 43210" required>
-                            <span class="field-error" id="errReceiverPhone">Valid 10-digit phone number is compulsory</span>
+                            <input type="tel" id="checkoutReceiverPhone" placeholder="e.g. 9876543210" maxlength="10" required>
+                            <span class="field-error" id="errReceiverPhone">Please enter a valid 10-digit mobile number (without +91)</span>
                         </div>
                     </div>
 
