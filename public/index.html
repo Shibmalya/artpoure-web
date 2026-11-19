@@ -7,6 +7,8 @@
     <meta name="description" content="Artpoure bespoke handwoven Banarasi, Kanjeevaram silk sarees & couture ethnic wear.">
     <link rel="stylesheet" href="style.css">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
+    <!-- Razorpay Standard Checkout SDK -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
 
@@ -212,6 +214,19 @@
                     <input type="text" id="consultWeave" placeholder="e.g. Kanchipuram pure gold zari, Banarasi Kadwa, etc.">
                 </div>
                 <button class="consultation-submit-btn" id="submitConsultationBtn">CONFIRM CONSULTATION</button>
+
+                <!-- Bespoke Hand-Painted Commission Deposit Helper -->
+                <div class="bespoke-commission-helper" style="margin-top: 18px; padding: 14px; border: 1px dashed var(--accent-gold); border-radius: 12px; background: rgba(92, 64, 51, 0.08); text-align: center;">
+                    <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.8px; color: var(--accent-gold); margin-bottom: 4px;">BESPOKE COMMISSION ADVANCE TOKEN</div>
+                    <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 10px;">For direct custom hand-painted commissions outside standard bag checkout, deposit token via verified Razorpay portal.</div>
+                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                        <input type="number" id="bespokeTokenAmount" value="5000" min="1000" step="500" style="width: 90px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 11px; font-weight: 700; text-align: center; background: var(--surface);">
+                        <a href="https://razorpay.me/@shibmalyaananya/5000" id="bespokePayLink" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; background: #5C4033; color: #ffffff; border-radius: 16px; font-size: 11px; font-weight: 700; text-decoration: none;">
+                            <span>PAY VIA RAZORPAY.ME</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -350,35 +365,22 @@
 
                     <div class="payment-options">
                         <!-- UPI Option -->
+                        <!-- Razorpay Live Checkout (UPI, Cards, NetBanking) -->
                         <label class="payment-option-tile active" id="payOptionUpi">
-                            <input type="radio" name="paymentMethod" value="UPI" checked>
+                            <input type="radio" name="paymentMethod" value="RAZORPAY" checked>
                             <div class="payment-tile-content">
                                 <div class="payment-tile-left">
                                     <span class="payment-tile-radio"></span>
                                     <div>
-                                        <div class="payment-tile-title">UPI (Google Pay / PhonePe / Paytm / BHIM)</div>
-                                        <div class="payment-tile-desc">Instant zero-fee transfer via registered VPA / QR</div>
+                                        <div class="payment-tile-title">Razorpay Live Checkout (UPI, Cards, NetBanking)</div>
+                                        <div class="payment-tile-desc">Instant 256-bit SSL encrypted live payment via Razorpay</div>
                                     </div>
                                 </div>
                                 <span class="payment-tile-badge">RECOMMENDED</span>
                             </div>
                         </label>
 
-                        <!-- Card Option -->
-                        <label class="payment-option-tile" id="payOptionCard">
-                            <input type="radio" name="paymentMethod" value="CARD">
-                            <div class="payment-tile-content">
-                                <div class="payment-tile-left">
-                                    <span class="payment-tile-radio"></span>
-                                    <div>
-                                        <div class="payment-tile-title">Credit / Debit Card</div>
-                                        <div class="payment-tile-desc">Visa, MasterCard, American Express, RuPay</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </label>
-
-                        <!-- Cash on Delivery -->
+                        <!-- Insured Cash on Delivery -->
                         <label class="payment-option-tile" id="payOptionCod">
                             <input type="radio" name="paymentMethod" value="COD">
                             <div class="payment-tile-content">
@@ -391,30 +393,6 @@
                                 </div>
                             </div>
                         </label>
-                    </div>
-
-                    <!-- UPI Dynamic Input -->
-                    <div class="payment-extra-box" id="upiInputBox">
-                        <label>Enter UPI ID / VPA</label>
-                        <input type="text" id="checkoutUpiId" placeholder="e.g. mobile@okaxis or user@upi">
-                    </div>
-
-                    <!-- Card Dynamic Input -->
-                    <div class="payment-extra-box" id="cardInputBox" style="display: none;">
-                        <div class="form-group">
-                            <label>Card Number</label>
-                            <input type="text" id="checkoutCardNumber" placeholder="XXXX XXXX XXXX XXXX" maxlength="19">
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group flex-1">
-                                <label>Expiry Date</label>
-                                <input type="text" id="checkoutCardExpiry" placeholder="MM/YY" maxlength="5">
-                            </div>
-                            <div class="form-group flex-1">
-                                <label>CVV / CVC</label>
-                                <input type="password" id="checkoutCardCvv" placeholder="123" maxlength="4">
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>

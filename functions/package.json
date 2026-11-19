@@ -1,0 +1,15 @@
+{
+  "name": "artpoure-functions",
+  "description": "Artpoure Firebase Cloud Functions for Razorpay Live Checkout",
+  "version": "1.0.0",
+  "main": "index.js",
+  "engines": {
+    "node": "18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "razorpay": "^2.9.4"
+  },
+  "private": true
+}

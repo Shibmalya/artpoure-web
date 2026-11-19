@@ -6,6 +6,8 @@
 import {
     auth,
     db,
+    functions,
+    httpsCallable,
     collection,
     getDocs,
     doc,
@@ -87,7 +89,7 @@ const state = {
     orders: JSON.parse(localStorage.getItem('artpoure_orders') || '[]'),
     theme: localStorage.getItem('artpoure_theme') || 'light',
     appliedPromoCode: localStorage.getItem('artpoure_promo_code') || null,
-    selectedPaymentMethod: 'UPI',
+    selectedPaymentMethod: 'RAZORPAY',
     deliveryAddress: JSON.parse(localStorage.getItem('artpoure_delivery_address') || 'null') || {
         id: 'addr_home',
         label: 'Home',
@@ -187,11 +189,7 @@ const elements = {
     errCity: document.getElementById('errCity'),
     errPinCode: document.getElementById('errPinCode'),
     payOptionUpi: document.getElementById('payOptionUpi'),
-    payOptionCard: document.getElementById('payOptionCard'),
     payOptionCod: document.getElementById('payOptionCod'),
-    upiInputBox: document.getElementById('upiInputBox'),
-    cardInputBox: document.getElementById('cardInputBox'),
-    checkoutUpiId: document.getElementById('checkoutUpiId'),
     checkoutItemPreviews: document.getElementById('checkoutItemPreviews'),
     checkoutPromoInput: document.getElementById('checkoutPromoInput'),
     checkoutPromoBtn: document.getElementById('checkoutPromoBtn'),
@@ -728,17 +726,27 @@ function setupEventListeners() {
     // Payment Option Switching
     if (elements.payOptionUpi) {
         elements.payOptionUpi.addEventListener('click', () => {
-            selectPaymentMethod('UPI');
+            selectPaymentMethod('RAZORPAY');
         });
     }
     if (elements.payOptionCard) {
         elements.payOptionCard.addEventListener('click', () => {
-            selectPaymentMethod('CARD');
+            selectPaymentMethod('RAZORPAY');
         });
     }
     if (elements.payOptionCod) {
         elements.payOptionCod.addEventListener('click', () => {
             selectPaymentMethod('COD');
+        });
+    }
+
+    // Bespoke Custom Commission Token link dynamic generator
+    const bespokeAmountInput = document.getElementById('bespokeTokenAmount');
+    const bespokePayLink = document.getElementById('bespokePayLink');
+    if (bespokeAmountInput && bespokePayLink) {
+        bespokeAmountInput.addEventListener('input', (e) => {
+            const val = Math.max(100, Number(e.target.value) || 5000);
+            bespokePayLink.href = `https://razorpay.me/@shibmalyaananya/${val}`;
         });
     }
 
@@ -1263,37 +1271,104 @@ function applyCheckoutPromo() {
     }
 }
 
-function selectPaymentMethod(method) {
-    state.selectedPaymentMethod = method;
-    [elements.payOptionUpi, elements.payOptionCard, elements.payOptionCod].forEach(tile => {
-        if (tile) tile.classList.remove('active');
-    });
+const RAZORPAY_KEY_ID = "rzp_live_U24HQteyWphATZ";
 
-    if (method === 'UPI') {
-        if (elements.payOptionUpi) {
-            elements.payOptionUpi.classList.add('active');
-            const radio = elements.payOptionUpi.querySelector('input');
-            if (radio) radio.checked = true;
-        }
-        if (elements.upiInputBox) elements.upiInputBox.style.display = 'block';
-        if (elements.cardInputBox) elements.cardInputBox.style.display = 'none';
-    } else if (method === 'CARD') {
-        if (elements.payOptionCard) {
-            elements.payOptionCard.classList.add('active');
-            const radio = elements.payOptionCard.querySelector('input');
-            if (radio) radio.checked = true;
-        }
-        if (elements.upiInputBox) elements.upiInputBox.style.display = 'none';
-        if (elements.cardInputBox) elements.cardInputBox.style.display = 'block';
-    } else if (method === 'COD') {
-        if (elements.payOptionCod) {
-            elements.payOptionCod.classList.add('active');
-            const radio = elements.payOptionCod.querySelector('input');
-            if (radio) radio.checked = true;
-        }
-        if (elements.upiInputBox) elements.upiInputBox.style.display = 'none';
-        if (elements.cardInputBox) elements.cardInputBox.style.display = 'none';
+function selectPaymentMethod(method) {
+    if (method === 'COD') {
+        state.selectedPaymentMethod = 'COD';
+        if (elements.payOptionCod) elements.payOptionCod.classList.add('active');
+        if (elements.payOptionUpi) elements.payOptionUpi.classList.remove('active');
+    } else {
+        state.selectedPaymentMethod = 'RAZORPAY';
+        if (elements.payOptionUpi) elements.payOptionUpi.classList.add('active');
+        if (elements.payOptionCod) elements.payOptionCod.classList.remove('active');
     }
+}
+
+function restorePlaceOrderBtn(grandTotal) {
+    if (elements.placeOrderBtn) {
+        elements.placeOrderBtn.disabled = false;
+        elements.placeOrderBtn.style.opacity = '1';
+        elements.placeOrderBtn.style.cursor = 'pointer';
+    }
+    if (elements.placeOrderBtnText) {
+        const total = grandTotal !== undefined ? grandTotal : state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
+        elements.placeOrderBtnText.textContent = `PAY ₹${total.toLocaleString('en-IN')} & CONFIRM ORDER`;
+    }
+}
+
+function setPlaceOrderBtnLoading(text) {
+    if (elements.placeOrderBtn) {
+        elements.placeOrderBtn.disabled = true;
+        elements.placeOrderBtn.style.opacity = '0.7';
+        elements.placeOrderBtn.style.cursor = 'not-allowed';
+    }
+    if (elements.placeOrderBtnText) {
+        elements.placeOrderBtnText.textContent = text || "INITIALIZING SECURE CHECKOUT...";
+    }
+}
+
+function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverName, receiverPhone, addressObj) {
+    const orderPayload = {
+        orderId,
+        items: state.cart.map(i => ({
+            productId: i.product.id,
+            title: i.product.editorialTitle,
+            variant: i.variant.colorName,
+            quantity: i.quantity,
+            priceInr: i.product.priceInr,
+            totalInr: i.product.priceInr * i.quantity
+        })),
+        pricing: {
+            grandTotal,
+            promoCode: state.appliedPromoCode || null
+        },
+        shippingAddress: {
+            receiverName,
+            receiverPhone,
+            houseFlat: addressObj.houseFlat,
+            floor: addressObj.floor,
+            street: addressObj.street,
+            area: addressObj.area,
+            city: addressObj.city,
+            pinCode: addressObj.pinCode
+        },
+        paymentMethod,
+        status: "CONFIRMED",
+        createdAt: new Date().toISOString()
+    };
+
+    state.orders.unshift(orderPayload);
+    localStorage.setItem('artpoure_orders', JSON.stringify(state.orders));
+    renderOrdersList();
+
+    if (elements.orderSuccessId) {
+        elements.orderSuccessId.textContent = `ORDER #${orderId}`;
+    }
+    if (elements.orderSuccessMeta) {
+        elements.orderSuccessMeta.innerHTML = `
+            <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--accent-gold);">
+                DELIVERING TO: ${receiverName} (${receiverPhone})
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
+                ${addressObj.fullDisplay}
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--text-primary);">
+                TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${paymentMethod})
+            </div>
+        `;
+    }
+    if (elements.orderSuccessModal) {
+        elements.orderSuccessModal.style.display = 'flex';
+    }
+
+    state.cart = [];
+    state.appliedPromoCode = null;
+    localStorage.removeItem('artpoure_cart');
+    localStorage.removeItem('artpoure_promo_code');
+    updateBadges();
+    renderCartDrawer();
+    restorePlaceOrderBtn(0);
 }
 
 async function validateAndPlaceOrder() {
@@ -1304,7 +1379,6 @@ async function validateAndPlaceOrder() {
 
     const receiverName = elements.checkoutReceiverName ? elements.checkoutReceiverName.value.trim() : '';
     const receiverPhone = elements.checkoutReceiverPhone ? elements.checkoutReceiverPhone.value.trim() : '';
-    const phoneDigits = receiverPhone.replace(/\D/g, '');
     const houseFlat = elements.checkoutHouseFlat ? elements.checkoutHouseFlat.value.trim() : '';
     const floor = elements.checkoutFloor ? elements.checkoutFloor.value.trim() : '';
     const street = elements.checkoutStreet ? elements.checkoutStreet.value.trim() : '';
@@ -1315,7 +1389,6 @@ async function validateAndPlaceOrder() {
     let isValid = true;
     let firstInvalid = null;
 
-    // Check Receiver Name
     if (!receiverName) {
         isValid = false;
         if (elements.errReceiverName) elements.errReceiverName.style.display = 'block';
@@ -1326,7 +1399,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutReceiverName) elements.checkoutReceiverName.classList.remove('input-invalid');
     }
 
-    // Check Receiver Phone (compulsory, strictly 10 digits, no +91)
     if (!receiverPhone || !/^\d{10}$/.test(receiverPhone)) {
         isValid = false;
         if (elements.errReceiverPhone) elements.errReceiverPhone.style.display = 'block';
@@ -1337,7 +1409,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutReceiverPhone) elements.checkoutReceiverPhone.classList.remove('input-invalid');
     }
 
-    // Check House / Flat Number
     if (!houseFlat) {
         isValid = false;
         if (elements.errHouseFlat) elements.errHouseFlat.style.display = 'block';
@@ -1348,7 +1419,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutHouseFlat) elements.checkoutHouseFlat.classList.remove('input-invalid');
     }
 
-    // Check Street Name
     if (!street) {
         isValid = false;
         if (elements.errStreet) elements.errStreet.style.display = 'block';
@@ -1359,7 +1429,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutStreet) elements.checkoutStreet.classList.remove('input-invalid');
     }
 
-    // Check Area / Locality
     if (!area) {
         isValid = false;
         if (elements.errArea) elements.errArea.style.display = 'block';
@@ -1370,7 +1439,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutArea) elements.checkoutArea.classList.remove('input-invalid');
     }
 
-    // Check City
     if (!city) {
         isValid = false;
         if (elements.errCity) elements.errCity.style.display = 'block';
@@ -1381,7 +1449,6 @@ async function validateAndPlaceOrder() {
         if (elements.checkoutCity) elements.checkoutCity.classList.remove('input-invalid');
     }
 
-    // Check PinCode (exactly 6 digits)
     if (!pinCode || !/^\d{6}$/.test(pinCode)) {
         isValid = false;
         if (elements.errPinCode) elements.errPinCode.style.display = 'block';
@@ -1400,7 +1467,6 @@ async function validateAndPlaceOrder() {
         return;
     }
 
-    // Save details to localStorage
     localStorage.setItem('user_profile_name', receiverName);
     localStorage.setItem('user_profile_phone', receiverPhone);
     const updatedAddrObj = {
@@ -1414,84 +1480,136 @@ async function validateAndPlaceOrder() {
     localStorage.setItem('artpoure_delivery_address', JSON.stringify(updatedAddrObj));
     updateCurrentAddressDisplay();
 
-    // Calculate Final Pricing
     const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
     const discount = state.appliedPromoCode === 'FIRST10' ? Math.round(subtotal * 0.10) : 0;
     const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
     const grandTotal = Math.max(0, subtotal - discount + shipping);
 
-    const orderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    // If Cash on Delivery is selected
+    if (state.selectedPaymentMethod === 'COD') {
+        const orderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        const orderPayload = {
+            orderId,
+            items: state.cart.map(i => ({
+                productId: i.product.id,
+                title: i.product.editorialTitle,
+                variant: i.variant.colorName,
+                quantity: i.quantity,
+                priceInr: i.product.priceInr,
+                totalInr: i.product.priceInr * i.quantity
+            })),
+            pricing: { subtotal, discount, shipping, grandTotal, promoCode: state.appliedPromoCode || null },
+            shippingAddress: { receiverName, receiverPhone, houseFlat, floor, street, area, city, pinCode },
+            paymentMethod: "COD",
+            status: "CONFIRMED",
+            createdAt: new Date().toISOString()
+        };
+        setDoc(doc(db, "orders", orderId), orderPayload).catch(err => console.warn("Firestore COD fallback:", err));
+        handleOrderSuccessDisplay(orderId, "Insured COD", grandTotal, receiverName, receiverPhone, updatedAddrObj);
+        return;
+    }
 
-    const orderPayload = {
-        orderId,
-        items: state.cart.map(i => ({
-            productId: i.product.id,
-            title: i.product.editorialTitle,
-            variant: i.variant.colorName,
-            quantity: i.quantity,
-            priceInr: i.product.priceInr,
-            totalInr: i.product.priceInr * i.quantity
-        })),
-        pricing: {
-            subtotal,
-            discount,
-            shipping,
-            grandTotal,
+    // ── RAZORPAY LIVE CHECKOUT FLOW ──
+    if (typeof window.Razorpay !== 'function') {
+        alert("Razorpay Standard Checkout SDK is loading or blocked by an adblocker. Please disable your adblocker and refresh.");
+        return;
+    }
+
+    setPlaceOrderBtnLoading("INITIALIZING LIVE GATEWAY...");
+
+    try {
+        const createOrderCallable = httpsCallable(functions, "createRazorpayOrder");
+        const orderRes = await createOrderCallable({
+            items: state.cart.map(i => ({
+                productId: i.product.id,
+                quantity: i.quantity,
+                variant: i.variant.colorName
+            })),
+            shippingAddress: {
+                receiverName,
+                receiverPhone,
+                houseFlat,
+                floor,
+                street,
+                area,
+                city,
+                pinCode
+            },
             promoCode: state.appliedPromoCode || null
-        },
-        shippingAddress: {
-            receiverName,
-            receiverPhone,
-            houseFlat,
-            floor,
-            street,
-            area,
-            city,
-            pinCode
-        },
-        paymentMethod: state.selectedPaymentMethod,
-        status: "CONFIRMED",
-        createdAt: new Date().toISOString()
-    };
+        });
 
-    // Non-blocking Firestore sync with fallback
-    setDoc(doc(db, "orders", orderId), orderPayload).catch(err => {
-        console.warn("Firestore order sync fallback:", err);
-    });
+        const { razorpayOrderId, amount, currency, firestoreOrderId } = orderRes.data;
 
-    // Persist to local state & localStorage for instant Order History reflection
-    state.orders.unshift(orderPayload);
-    localStorage.setItem('artpoure_orders', JSON.stringify(state.orders));
-    renderOrdersList();
+        const options = {
+            key: RAZORPAY_KEY_ID,
+            amount: amount,
+            currency: currency || "INR",
+            name: "Artpoure",
+            description: `Haute Ethnic Commission #${firestoreOrderId}`,
+            order_id: razorpayOrderId,
+            theme: {
+                color: "#5C4033"
+            },
+            prefill: {
+                name: receiverName,
+                contact: receiverPhone,
+                email: (auth.currentUser && auth.currentUser.email) || "patron@artpoure.in"
+            },
+            retry: {
+                enabled: true,
+                max_count: 2
+            },
+            handler: async function (response) {
+                setPlaceOrderBtnLoading("VERIFYING PAYMENT INTEGRITY...");
+                try {
+                    const verifyCallable = httpsCallable(functions, "verifyRazorpayPayment");
+                    const verifyRes = await verifyCallable({
+                        razorpayOrderId: response.razorpay_order_id,
+                        razorpayPaymentId: response.razorpay_payment_id,
+                        razorpaySignature: response.razorpay_signature,
+                        firestoreOrderId: firestoreOrderId
+                    });
 
-    // Display Luxury Order Confirmed Modal
-    if (elements.orderSuccessId) {
-        elements.orderSuccessId.textContent = `ORDER #${orderId}`;
+                    if (verifyRes.data && verifyRes.data.success) {
+                        handleOrderSuccessDisplay(
+                            firestoreOrderId,
+                            `Razorpay Live (${response.razorpay_payment_id})`,
+                            grandTotal,
+                            receiverName,
+                            receiverPhone,
+                            updatedAddrObj
+                        );
+                    } else {
+                        alert("Payment signature verification failed. Please contact support.");
+                        restorePlaceOrderBtn(grandTotal);
+                    }
+                } catch (verifyErr) {
+                    console.error("Signature verification error:", verifyErr);
+                    alert("Payment received but signature verification timed out. Ref ID: " + response.razorpay_payment_id);
+                    restorePlaceOrderBtn(grandTotal);
+                }
+            },
+            modal: {
+                ondismiss: function () {
+                    console.log("Customer closed Razorpay modal.");
+                    restorePlaceOrderBtn(grandTotal);
+                }
+            }
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on("payment.failed", function (failResponse) {
+            console.error("Razorpay payment error:", failResponse.error);
+            alert("Payment Failed: " + (failResponse.error?.description || "Transaction declined by bank/network."));
+            restorePlaceOrderBtn(grandTotal);
+        });
+        rzp.open();
+
+    } catch (createErr) {
+        console.error("Order creation error:", createErr);
+        alert("Failed to initiate live checkout: " + (createErr.message || "Please check connection."));
+        restorePlaceOrderBtn(grandTotal);
     }
-    if (elements.orderSuccessMeta) {
-        elements.orderSuccessMeta.innerHTML = `
-            <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--accent-gold);">
-                DELIVERING TO: ${receiverName} (${receiverPhone})
-            </div>
-            <div style="font-size: 11px; color: var(--text-secondary); line-height: 1.5;">
-                ${houseFlat}${floor ? ', ' + floor : ''}, ${street}, ${area}, ${city} - ${pinCode}
-            </div>
-            <div style="margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--text-primary);">
-                TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${state.selectedPaymentMethod})
-            </div>
-        `;
-    }
-    if (elements.orderSuccessModal) {
-        elements.orderSuccessModal.style.display = 'flex';
-    }
-
-    // Reset Cart
-    state.cart = [];
-    state.appliedPromoCode = null;
-    localStorage.removeItem('artpoure_cart');
-    localStorage.removeItem('artpoure_promo_code');
-    updateBadges();
-    renderCartDrawer();
 }
 
 // --- RENDER ARTCLUSIVE VAULT PIECES ---
@@ -2098,6 +2216,15 @@ function useCurrentLocation() {
         { timeout: 10000, enableHighAccuracy: true }
     );
 }
+
+/**
+ * Helper to generate verified Razorpay bespoke payment link for custom commissions outside cart
+ */
+export function generateBespokePaymentLink(amount) {
+    const validAmount = Math.max(1, Math.round(Number(amount) || 5000));
+    return `https://razorpay.me/@shibmalyaananya/${validAmount}`;
+}
+window.generateBespokePaymentLink = generateBespokePaymentLink;
 
 // Boot application
 document.addEventListener('DOMContentLoaded', init);
