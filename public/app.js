@@ -354,17 +354,16 @@ function renderCatalog() {
                     </div>
                     <div class="card-bottom-row">
                         <div class="card-price-group">
-                            <span class="card-price-label">PRICE</span>
+                            <div class="swatch-group">
+                                ${product.variants.map((v, i) => `
+                                    <div class="swatch-dot ${i === activeIdx ? 'active' : ''}"
+                                         style="background-color: ${v.swatchHex};"
+                                         data-product-id="${product.id}"
+                                         data-variant-idx="${i}"
+                                         title="${v.colorName}"></div>
+                                `).join('')}
+                            </div>
                             <span class="card-price">₹${product.priceInr.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div class="swatch-group">
-                            ${product.variants.map((v, i) => `
-                                <div class="swatch-dot ${i === activeIdx ? 'active' : ''}"
-                                     style="background-color: ${v.swatchHex};"
-                                     data-product-id="${product.id}"
-                                     data-variant-idx="${i}"
-                                     title="${v.colorName}"></div>
-                            `).join('')}
                         </div>
                         <button class="quick-add-btn" data-add-id="${product.id}" title="Add to Bag">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -416,6 +415,13 @@ function attachCardEventListeners() {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = btn.dataset.addId;
+            btn.classList.add('animating');
+            const originalSvg = btn.innerHTML;
+            btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            setTimeout(() => {
+                btn.classList.remove('animating');
+                btn.innerHTML = originalSvg;
+            }, 650);
             addToCart(id);
         });
     });

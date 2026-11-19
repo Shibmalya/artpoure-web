@@ -667,6 +667,12 @@ body {
     font-weight: 600;
 }
 
+.card-price-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .card-price {
     font-size: 15px;
     font-weight: 800;
@@ -729,6 +735,12 @@ body {
 .quick-add-btn:hover {
     transform: scale(1.1);
     background: var(--accent-gold);
+}
+
+.quick-add-btn.animating {
+    transform: scale(1.25);
+    background: var(--accent-gold, #D4AF37) !important;
+    color: #FFFFFF !important;
 }
 
 /* ==========================================================================
