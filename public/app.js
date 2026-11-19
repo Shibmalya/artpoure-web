@@ -1019,6 +1019,7 @@ function setupEventListeners() {
             const aptId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
             const appointment = {
                 id: aptId,
+                userId: auth.currentUser ? auth.currentUser.uid : null,
                 clientName: name,
                 clientPhone: phone,
                 preferredDate: date,

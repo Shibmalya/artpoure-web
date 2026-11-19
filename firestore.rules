@@ -1,0 +1,119 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // HELPER FUNCTIONS
+    // =========================================================================
+
+    // Checks if the request is from an authenticated user
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Checks if the authenticated user is the owner of the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Checks if the authenticated user has administrative privileges
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == "admin" ||
+        request.auth.token.email in [
+          "artpoure@gmail.com",
+          "admin@artpoure.in",
+          "shibmalyaananya@gmail.com"
+        ]
+      );
+    }
+
+    // =========================================================================
+    // 1. PUBLIC CATALOG (products, categories, banners, etc.)
+    // =========================================================================
+    // Anyone (guests and authenticated users) can browse the catalog.
+    // Only administrators or the Admin SDK (Cloud Functions) can modify catalog items.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /promotions/{promoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =========================================================================
+    // 2. USER PROFILES, CARTS & SUBCOLLECTIONS (users/{userId}/...)
+    // =========================================================================
+    // Users can read and write only their own profile and personal subcollections
+    // (e.g. cart, saved addresses, wishlist). Admins have override access.
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+
+      // Recursive subcollections (cart, wishlist, addresses, etc.)
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // =========================================================================
+    // 3. ORDERS COLLECTION (orders/{orderId})
+    // =========================================================================
+    // Authenticated users can read ONLY their own orders.
+    // Client-side writes are strictly forbidden (allow write: if false;).
+    // All order creation and status changes (e.g., mark as PAID or CONFIRMED)
+    // are executed securely via Firebase Cloud Functions using the Admin SDK.
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if false;
+    }
+
+    // =========================================================================
+    // 4. ATELIER CONSULTATIONS & APPOINTMENTS (appointments/{aptId})
+    // =========================================================================
+    // Authenticated clients can create consultation appointments.
+    // Users can view or cancel (update) their own appointments.
+    match /appointments/{aptId} {
+      allow create: if isAuthenticated() && (
+        !('userId' in request.resource.data) ||
+        request.resource.data.userId == null ||
+        request.resource.data.userId == request.auth.uid
+      );
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.clientPhone == request.auth.token.phone_number ||
+        isAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.clientPhone == request.auth.token.phone_number ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 5. CATCH-ALL DEFAULT DENY
+    // =========================================================================
+    // Restricts any unmapped collections from unauthorized access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
