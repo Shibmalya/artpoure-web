@@ -2375,16 +2375,22 @@ body.artclusive-mode .brand-title {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.75);
-    z-index: 220;
+    z-index: 2000;
     display: none;
     align-items: center;
     justify-content: center;
     padding: 16px;
     backdrop-filter: blur(6px);
+    pointer-events: auto;
 }
 
 .profile-modal-overlay.open {
-    display: flex;
+    display: flex !important;
+}
+
+#profileHeaderBtn {
+    cursor: pointer;
+    pointer-events: auto;
 }
 
 .profile-modal {

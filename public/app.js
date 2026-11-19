@@ -1162,23 +1162,26 @@ function setupEventListeners() {
     }
 
     // --- PROFILE MODAL LISTENERS (1:1 with Android ProfileScreen.kt) ---
-    if (elements.profileHeaderBtn && elements.profileModalOverlay) {
-        elements.profileHeaderBtn.addEventListener('click', () => {
-            updateProfileModalDisplay();
-            elements.profileModalOverlay.classList.add('open');
+    if (elements.profileHeaderBtn) {
+        elements.profileHeaderBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openProfileModal();
         });
     }
 
-    if (elements.closeProfileBtn && elements.profileModalOverlay) {
-        elements.closeProfileBtn.addEventListener('click', () => {
-            elements.profileModalOverlay.classList.remove('open');
+    if (elements.closeProfileBtn) {
+        elements.closeProfileBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeProfileModal();
         });
     }
 
     if (elements.profileModalOverlay) {
         elements.profileModalOverlay.addEventListener('click', (e) => {
             if (e.target === elements.profileModalOverlay) {
-                elements.profileModalOverlay.classList.remove('open');
+                closeProfileModal();
             }
         });
     }
@@ -1331,6 +1334,26 @@ function setupEventListeners() {
         });
     }
 }
+
+// --- PROFILE MODAL CONTROLLERS (Exposed globally for bulletproof invocation) ---
+export function openProfileModal() {
+    const overlay = document.getElementById('profileModalOverlay') || elements.profileModalOverlay;
+    if (!overlay) return;
+    try {
+        updateProfileModalDisplay();
+    } catch (e) {
+        console.warn("Profile display update error:", e);
+    }
+    overlay.classList.add('open');
+}
+
+export function closeProfileModal() {
+    const overlay = document.getElementById('profileModalOverlay') || elements.profileModalOverlay;
+    if (overlay) overlay.classList.remove('open');
+}
+
+window.openProfileModal = openProfileModal;
+window.closeProfileModal = closeProfileModal;
 
 // --- PROFILE DISPLAY SYNCHRONIZER (1:1 with Android ProfileScreen.kt) ---
 function updateProfileModalDisplay() {
@@ -2550,5 +2573,20 @@ export function generateBespokePaymentLink(amount) {
 }
 window.generateBespokePaymentLink = generateBespokePaymentLink;
 
-// Boot application
-document.addEventListener('DOMContentLoaded', init);
+// Global delegated click handler for profile modal triggers
+document.addEventListener('click', (e) => {
+    if (e.target.closest('#profileHeaderBtn')) {
+        e.preventDefault();
+        e.stopPropagation();
+        openProfileModal();
+    } else if (e.target.closest('#closeProfileBtn') || e.target.id === 'profileModalOverlay') {
+        closeProfileModal();
+    }
+});
+
+// Boot application reliably across all document loading states
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
