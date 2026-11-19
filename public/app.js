@@ -13,8 +13,34 @@ import {
     doc,
     setDoc,
     getDoc,
-    onAuthStateChanged
+    onAuthStateChanged,
+    signInAnonymously
 } from './firebase-config.js';
+
+// --- AUTHENTICATION SESSION HELPER ---
+export async function ensureAuthSession() {
+    if (!auth.currentUser) {
+        try {
+            await signInAnonymously(auth);
+            console.log("Initialized anonymous auth session for guest:", auth.currentUser?.uid);
+        } catch (err) {
+            console.error("Anonymous authentication error:", err);
+            throw err;
+        }
+    }
+    return auth.currentUser;
+}
+window.ensureAuthSession = ensureAuthSession;
+
+document.addEventListener('click', async (e) => {
+    if (e.target && e.target.closest('#guestBtn, .btn-guest, [data-action="guest"], #continueAsGuest')) {
+        try {
+            await ensureAuthSession();
+        } catch (err) {
+            console.error("Guest login click error:", err);
+        }
+    }
+});
 
 // --- DATA STRUCTURES (Exact 1:1 match with Kotlin models) ---
 const FALLBACK_PRODUCTS = [
@@ -1017,6 +1043,7 @@ function setupEventListeners() {
             const weaveSuffix = weave ? ` for "${weave}"` : '';
 
             const aptId = `APT-${Math.floor(1000 + Math.random() * 9000)}`;
+            await ensureAuthSession();
             const appointment = {
                 id: aptId,
                 userId: auth.currentUser ? auth.currentUser.uid : null,
@@ -1490,6 +1517,7 @@ async function validateAndPlaceOrder() {
     if (state.selectedPaymentMethod === 'COD') {
         setPlaceOrderBtnLoading("CONFIRMING CASH ON DELIVERY...");
         try {
+            await ensureAuthSession();
             const createCodCallable = httpsCallable(functions, "createCodOrder");
             const codRes = await createCodCallable({
                 items: state.cart.map(i => ({
@@ -1530,6 +1558,7 @@ async function validateAndPlaceOrder() {
     setPlaceOrderBtnLoading("INITIALIZING LIVE GATEWAY...");
 
     try {
+        await ensureAuthSession();
         const createOrderCallable = httpsCallable(functions, "createRazorpayOrder");
         const orderRes = await createOrderCallable({
             items: state.cart.map(i => ({
