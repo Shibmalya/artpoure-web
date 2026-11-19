@@ -14,7 +14,13 @@ import {
     setDoc,
     getDoc,
     onAuthStateChanged,
-    signInAnonymously
+    signInAnonymously,
+    signOut,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    updateProfile
 } from './firebase-config.js';
 
 // --- AUTHENTICATION SESSION HELPER ---
@@ -267,7 +273,34 @@ const elements = {
     newAddrPin: document.getElementById('newAddrPin'),
     cancelNewAddrBtn: document.getElementById('cancelNewAddrBtn'),
     saveNewAddrBtn: document.getElementById('saveNewAddrBtn'),
-    savedAddressesList: document.getElementById('savedAddressesList')
+    savedAddressesList: document.getElementById('savedAddressesList'),
+    // Profile Modal Elements (1:1 with Android ProfileScreen.kt)
+    profileHeaderBtn: document.getElementById('profileHeaderBtn'),
+    profileModalOverlay: document.getElementById('profileModalOverlay'),
+    closeProfileBtn: document.getElementById('closeProfileBtn'),
+    profileAvatarWrapper: document.getElementById('profileAvatarWrapper'),
+    profileAvatarImg: document.getElementById('profileAvatarImg'),
+    profileAvatarFallback: document.getElementById('profileAvatarFallback'),
+    profileAvatarInput: document.getElementById('profileAvatarInput'),
+    profileUserName: document.getElementById('profileUserName'),
+    editProfileNameBtn: document.getElementById('editProfileNameBtn'),
+    profileUserEmail: document.getElementById('profileUserEmail'),
+    profileStatusBadge: document.getElementById('profileStatusBadge'),
+    profileUserPhone: document.getElementById('profileUserPhone'),
+    editProfilePhoneBtn: document.getElementById('editProfilePhoneBtn'),
+    menuOrderHistory: document.getElementById('menuOrderHistory'),
+    menuSavedAddresses: document.getElementById('menuSavedAddresses'),
+    profileAddressCountSub: document.getElementById('profileAddressCountSub'),
+    menuWishlist: document.getElementById('menuWishlist'),
+    menuShareApp: document.getElementById('menuShareApp'),
+    menuThemeSetting: document.getElementById('menuThemeSetting'),
+    btnToggleProfileTheme: document.getElementById('btnToggleProfileTheme'),
+    profileThemeSub: document.getElementById('profileThemeSub'),
+    menuNotificationSetting: document.getElementById('menuNotificationSetting'),
+    profileNotifToggle: document.getElementById('profileNotifToggle'),
+    profileNotifSub: document.getElementById('profileNotifSub'),
+    profileAuthBtn: document.getElementById('profileAuthBtn'),
+    profileAuthBtnText: document.getElementById('profileAuthBtnText')
 };
 
 // --- INITIALIZATION ---
@@ -276,6 +309,10 @@ async function init() {
     setupScrollPhysics();
     setupEventListeners();
     updateCurrentAddressDisplay();
+    updateProfileModalDisplay();
+    onAuthStateChanged(auth, () => {
+        updateProfileModalDisplay();
+    });
     await fetchCatalog();
     setupHeroShowcase();
     renderCatalog();
@@ -1122,6 +1159,246 @@ function setupEventListeners() {
         elements.saveNewAddrBtn.addEventListener('click', () => {
             saveNewCustomAddress();
         });
+    }
+
+    // --- PROFILE MODAL LISTENERS (1:1 with Android ProfileScreen.kt) ---
+    if (elements.profileHeaderBtn && elements.profileModalOverlay) {
+        elements.profileHeaderBtn.addEventListener('click', () => {
+            updateProfileModalDisplay();
+            elements.profileModalOverlay.classList.add('open');
+        });
+    }
+
+    if (elements.closeProfileBtn && elements.profileModalOverlay) {
+        elements.closeProfileBtn.addEventListener('click', () => {
+            elements.profileModalOverlay.classList.remove('open');
+        });
+    }
+
+    if (elements.profileModalOverlay) {
+        elements.profileModalOverlay.addEventListener('click', (e) => {
+            if (e.target === elements.profileModalOverlay) {
+                elements.profileModalOverlay.classList.remove('open');
+            }
+        });
+    }
+
+    if (elements.profileAvatarWrapper && elements.profileAvatarInput) {
+        elements.profileAvatarWrapper.addEventListener('click', () => {
+            elements.profileAvatarInput.click();
+        });
+
+        elements.profileAvatarInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (uploadEvt) => {
+                    const dataUrl = uploadEvt.target.result;
+                    localStorage.setItem('user_profile_avatar', dataUrl);
+                    updateProfileModalDisplay();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    if (elements.editProfileNameBtn) {
+        elements.editProfileNameBtn.addEventListener('click', () => {
+            const currentName = localStorage.getItem('user_profile_name') || (auth.currentUser && auth.currentUser.displayName) || "Ananya Dey";
+            const newName = prompt("Enter your full name:", currentName);
+            if (newName && newName.trim()) {
+                localStorage.setItem('user_profile_name', newName.trim());
+                if (elements.checkoutReceiverName) elements.checkoutReceiverName.value = newName.trim();
+                if (elements.consultName) elements.consultName.value = newName.trim();
+                updateProfileModalDisplay();
+            }
+        });
+    }
+
+    if (elements.editProfilePhoneBtn) {
+        elements.editProfilePhoneBtn.addEventListener('click', () => {
+            const currentPhone = localStorage.getItem('user_profile_phone') || (auth.currentUser && auth.currentUser.phoneNumber) || "9876543210";
+            const rawPhone = prompt("Enter 10-digit mobile number:", currentPhone);
+            if (rawPhone !== null) {
+                const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+                if (cleanPhone.length === 10) {
+                    localStorage.setItem('user_profile_phone', cleanPhone);
+                    if (elements.checkoutReceiverPhone) elements.checkoutReceiverPhone.value = cleanPhone;
+                    if (elements.consultPhone) elements.consultPhone.value = cleanPhone;
+                    updateProfileModalDisplay();
+                } else {
+                    alert("Please enter a valid 10-digit mobile number.");
+                }
+            }
+        });
+    }
+
+    if (elements.menuOrderHistory) {
+        elements.menuOrderHistory.addEventListener('click', () => {
+            if (elements.profileModalOverlay) elements.profileModalOverlay.classList.remove('open');
+            openHistoryModal('orders');
+        });
+    }
+
+    if (elements.menuSavedAddresses) {
+        elements.menuSavedAddresses.addEventListener('click', () => {
+            if (elements.profileModalOverlay) elements.profileModalOverlay.classList.remove('open');
+            openAddressModal();
+        });
+    }
+
+    if (elements.menuWishlist) {
+        elements.menuWishlist.addEventListener('click', () => {
+            if (elements.profileModalOverlay) elements.profileModalOverlay.classList.remove('open');
+            if (elements.wishlistHeaderBtn) {
+                elements.wishlistHeaderBtn.click();
+            }
+        });
+    }
+
+    if (elements.menuShareApp) {
+        elements.menuShareApp.addEventListener('click', async () => {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'ARTPOURE — Haute Couture & Silk Mark Sarees',
+                        text: 'Explore bespoke handwoven Banarasi & Kanjeevaram silk sarees on ARTPOURE:',
+                        url: window.location.href
+                    });
+                } catch (err) {
+                    // Cancelled
+                }
+            } else {
+                try {
+                    await navigator.clipboard.writeText(window.location.href);
+                    alert("ARTPOURE boutique link copied to clipboard!");
+                } catch (e) {
+                    prompt("Copy ARTPOURE link:", window.location.href);
+                }
+            }
+        });
+    }
+
+    if (elements.btnToggleProfileTheme) {
+        elements.btnToggleProfileTheme.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const next = state.theme === 'light' ? 'dark' : 'light';
+            applyTheme(next);
+            updateProfileModalDisplay();
+        });
+    }
+
+    if (elements.profileNotifToggle) {
+        elements.profileNotifToggle.addEventListener('change', (e) => {
+            localStorage.setItem('user_notifications_enabled', e.target.checked ? 'true' : 'false');
+            updateProfileModalDisplay();
+        });
+    }
+
+    if (elements.profileAuthBtn) {
+        elements.profileAuthBtn.addEventListener('click', async () => {
+            if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                if (confirm("Are you sure you want to sign out?")) {
+                    await signOut(auth);
+                    updateProfileModalDisplay();
+                }
+            } else {
+                try {
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(auth, provider);
+                    updateProfileModalDisplay();
+                } catch (err) {
+                    console.log("Popup sign in cancelled or blocked:", err);
+                    const email = prompt("Enter your email to sign in or register:");
+                    if (email && email.includes('@')) {
+                        const pass = prompt("Enter password (minimum 6 characters):");
+                        if (pass && pass.length >= 6) {
+                            try {
+                                await signInWithEmailAndPassword(auth, email.trim(), pass);
+                                updateProfileModalDisplay();
+                            } catch (authErr) {
+                                try {
+                                    await createUserWithEmailAndPassword(auth, email.trim(), pass);
+                                    updateProfileModalDisplay();
+                                } catch (createErr) {
+                                    alert("Authentication failed: " + (createErr.message || authErr.message));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// --- PROFILE DISPLAY SYNCHRONIZER (1:1 with Android ProfileScreen.kt) ---
+function updateProfileModalDisplay() {
+    const user = auth.currentUser;
+    const isAnon = !user || user.isAnonymous;
+    const storedName = localStorage.getItem('user_profile_name');
+    const storedPhone = localStorage.getItem('user_profile_phone');
+    const storedAvatar = localStorage.getItem('user_profile_avatar');
+
+    // Name
+    const displayName = (user && user.displayName) || storedName || (isAnon ? "Guest Account" : "Ananya Dey");
+    if (elements.profileUserName) elements.profileUserName.textContent = displayName;
+
+    // Email
+    const displayEmail = (user && user.email) || (isAnon ? "Client Account (Guest Session)" : "ananya@artpoure.in");
+    if (elements.profileUserEmail) elements.profileUserEmail.textContent = displayEmail;
+
+    // Status Badge
+    if (elements.profileStatusBadge) {
+        elements.profileStatusBadge.textContent = isAnon ? "GUEST CLIENT" : "VERIFIED MEMBER";
+    }
+
+    // Phone
+    const displayPhone = (user && user.phoneNumber) || storedPhone || "9876543210";
+    if (elements.profileUserPhone) {
+        const clean = displayPhone.replace(/\D/g, '').slice(-10);
+        elements.profileUserPhone.textContent = clean ? `+91 ${clean}` : "No phone number added";
+    }
+    if (elements.editProfilePhoneBtn) {
+        elements.editProfilePhoneBtn.textContent = (storedPhone || (user && user.phoneNumber)) ? "EDIT" : "+ ADD";
+    }
+
+    // Avatar
+    const avatarUrl = (user && user.photoURL) || storedAvatar;
+    if (elements.profileAvatarImg && elements.profileAvatarFallback) {
+        if (avatarUrl) {
+            elements.profileAvatarImg.src = avatarUrl;
+            elements.profileAvatarImg.style.display = 'block';
+            elements.profileAvatarFallback.style.display = 'none';
+        } else {
+            elements.profileAvatarImg.style.display = 'none';
+            elements.profileAvatarFallback.style.display = 'flex';
+        }
+    }
+
+    // Saved Addresses count subtitle
+    if (elements.profileAddressCountSub) {
+        const addrCount = (state.savedAddresses && state.savedAddresses.length) || 3;
+        elements.profileAddressCountSub.textContent = `${addrCount} addresses saved • View & edit`;
+    }
+
+    // Appearance theme subtitle
+    if (elements.profileThemeSub) {
+        elements.profileThemeSub.textContent = `${state.theme === 'dark' ? 'Dark' : 'Light'} mode active • Tap to change`;
+    }
+
+    // Notification toggle
+    const notifEnabled = localStorage.getItem('user_notifications_enabled') !== 'false';
+    if (elements.profileNotifToggle) {
+        elements.profileNotifToggle.checked = notifEnabled;
+    }
+    if (elements.profileNotifSub) {
+        elements.profileNotifSub.textContent = notifEnabled ? "WhatsApp alerts & dispatch updates active" : "Notifications paused • Tap toggle to activate";
+    }
+
+    // Auth Action text
+    if (elements.profileAuthBtnText) {
+        elements.profileAuthBtnText.textContent = isAnon ? "SIGN IN / LINK ACCOUNT" : "SIGN OUT";
     }
 }
 

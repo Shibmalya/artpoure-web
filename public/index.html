@@ -51,6 +51,11 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                     <span class="badge" id="wishlistBadge">0</span>
                 </button>
+
+                <!-- Profile & Account Menu Button (matching Android top bar) -->
+                <button class="icon-btn" id="profileHeaderBtn" title="Account & Profile">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </button>
             </div>
         </div>
 
@@ -572,6 +577,162 @@
                 <!-- Saved Address Cards Container -->
                 <div class="saved-addresses-list" id="savedAddressesList">
                     <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dedicated Profile & Account Modal (1:1 with Android ProfileScreen.kt) -->
+    <div class="profile-modal-overlay" id="profileModalOverlay">
+        <div class="profile-modal">
+            <div class="profile-modal-header">
+                <div class="profile-header-meta">
+                    <span class="profile-super-tag">ARTPOURE EDITORIAL</span>
+                    <h2 class="profile-main-title">PROFILE</h2>
+                    <p class="profile-sub-tag">ACCOUNT & PREFERENCES</p>
+                </div>
+                <button class="icon-btn profile-close-btn" id="closeProfileBtn" title="Close Profile">✕</button>
+            </div>
+
+            <div class="profile-modal-body">
+                <!-- 1. USER IDENTITY CARD (1:1 with Android) -->
+                <div class="profile-card profile-user-card">
+                    <div class="profile-avatar-wrapper" id="profileAvatarWrapper" title="Click to upload profile picture">
+                        <img id="profileAvatarImg" src="" alt="Avatar" style="display: none;">
+                        <div class="profile-avatar-fallback" id="profileAvatarFallback">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        </div>
+                        <div class="profile-camera-badge" title="Change photo">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                        </div>
+                        <input type="file" id="profileAvatarInput" accept="image/*" style="display: none;">
+                    </div>
+
+                    <div class="profile-user-info">
+                        <div class="profile-name-row">
+                            <span class="profile-user-name" id="profileUserName">Ananya Dey</span>
+                            <button class="btn-edit-inline" id="editProfileNameBtn" title="Edit Name">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                        </div>
+                        <span class="profile-user-email" id="profileUserEmail">Client Account</span>
+                        <div class="profile-badge-row">
+                            <span class="profile-status-badge" id="profileStatusBadge">GUEST CLIENT</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. PHONE NUMBER SECTION -->
+                <div class="profile-card profile-phone-card">
+                    <div class="profile-phone-left">
+                        <div class="profile-icon-bubble">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        </div>
+                        <div>
+                            <span class="profile-item-tag">PHONE NUMBER</span>
+                            <div class="profile-item-val" id="profileUserPhone">No phone number added</div>
+                        </div>
+                    </div>
+                    <button class="profile-pill-btn" id="editProfilePhoneBtn">+ ADD</button>
+                </div>
+
+                <!-- 3. SHOPPING & PAYMENT SERVICES -->
+                <div class="profile-section-heading">SHOPPING & PAYMENT SERVICES</div>
+
+                <div class="profile-menu-list">
+                    <div class="profile-menu-item" id="menuOrderHistory">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">Order History</div>
+                                <div class="profile-menu-sub">Track consultations & couture purchases</div>
+                            </div>
+                        </div>
+                        <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+
+                    <div class="profile-menu-item" id="menuSavedAddresses">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">Saved Addresses</div>
+                                <div class="profile-menu-sub" id="profileAddressCountSub">Add personal & gifting delivery points</div>
+                            </div>
+                        </div>
+                        <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+
+                    <div class="profile-menu-item" id="menuWishlist">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">Wishlist</div>
+                                <div class="profile-menu-sub">Curated collection of saved masterpieces</div>
+                            </div>
+                        </div>
+                        <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+
+                    <div class="profile-menu-item" id="menuShareApp">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">Share Artpoure</div>
+                                <div class="profile-menu-sub">Share the boutique with friends & family</div>
+                            </div>
+                        </div>
+                        <svg class="profile-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+                </div>
+
+                <!-- 4. APP PREFERENCES -->
+                <div class="profile-section-heading">APP PREFERENCES</div>
+
+                <div class="profile-menu-list">
+                    <div class="profile-menu-item" id="menuThemeSetting">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon" id="profileThemeIcon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">Appearance & Theme</div>
+                                <div class="profile-menu-sub" id="profileThemeSub">Toggle Dark / Light Mode</div>
+                            </div>
+                        </div>
+                        <button class="profile-pill-btn" id="btnToggleProfileTheme">TOGGLE</button>
+                    </div>
+
+                    <div class="profile-menu-item" id="menuNotificationSetting">
+                        <div class="profile-menu-left">
+                            <div class="profile-menu-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                            </div>
+                            <div>
+                                <div class="profile-menu-title">WhatsApp & Notifications</div>
+                                <div class="profile-menu-sub" id="profileNotifSub">Haute couture alerts & dispatch updates</div>
+                            </div>
+                        </div>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="profileNotifToggle" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 5. AUTHENTICATION ACTION -->
+                <div class="profile-auth-action-wrap">
+                    <button class="profile-auth-btn" id="profileAuthBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                        <span id="profileAuthBtnText">SIGN OUT</span>
+                    </button>
                 </div>
             </div>
         </div>
