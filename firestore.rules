@@ -18,15 +18,20 @@ service cloud.firestore {
     }
 
     // Checks if the authenticated user has administrative privileges
+    // Requires email_verified == true for allowlist matches
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.admin == true ||
         request.auth.token.role == "admin" ||
-        request.auth.token.email in [
-          "artpoure@gmail.com",
-          "admin@artpoure.in",
-          "shibmalyaananya@gmail.com"
-        ]
+        (
+          request.auth.token.email_verified == true &&
+          request.auth.token.email in [
+            "artpoure@gmail.com",
+            "admin@artpoure.in",
+            "shibmalyaananya@gmail.com",
+            "shibmalyada@gmail.com"
+          ]
+        )
       );
     }
 
@@ -87,13 +92,26 @@ service cloud.firestore {
     // =========================================================================
     // 4. ATELIER CONSULTATIONS & APPOINTMENTS (appointments/{aptId})
     // =========================================================================
-    // Authenticated clients can create consultation appointments.
-    // Users can view or cancel (update) their own appointments.
+    // Guests and authenticated clients can book consultation appointments with validation.
+    // Reading, updating (cancelling), and deleting are strictly restricted.
     match /appointments/{aptId} {
-      allow create: if isAuthenticated() && (
-        !('userId' in request.resource.data) ||
-        request.resource.data.userId == null ||
-        request.resource.data.userId == request.auth.uid
+      allow create: if (
+        request.resource.data.keys().hasOnly([
+          'id', 'userId', 'clientName', 'clientPhone',
+          'preferredDate', 'preferredWeave', 'status', 'bookedAt'
+        ]) &&
+        request.resource.data.status == 'CONFIRMED' &&
+        request.resource.data.clientName is string &&
+        request.resource.data.clientName.size() > 0 &&
+        request.resource.data.clientName.size() <= 100 &&
+        request.resource.data.clientPhone is string &&
+        request.resource.data.clientPhone.matches('^[0-9]{10}$') &&
+        request.resource.data.preferredDate is string &&
+        request.resource.data.preferredDate.size() > 0 &&
+        (
+          (request.auth == null && request.resource.data.userId == null) ||
+          (request.auth != null && request.resource.data.userId == request.auth.uid)
+        )
       );
       allow read: if isAuthenticated() && (
         resource.data.userId == request.auth.uid ||

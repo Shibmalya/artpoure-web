@@ -158,7 +158,7 @@ exports.createRazorpayOrder = onCall(
         // Write pending order document into Firestore
         const orderDoc = {
             orderId: firestoreOrderId,
-            userId: request.auth.uid,
+            userId: request.auth ? request.auth.uid : null,
             razorpayOrderId: rzpOrder.id,
             items: verifiedItems,
             pricing: {
@@ -272,7 +272,119 @@ exports.verifyRazorpayPayment = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. HTTP WEBHOOK: razorpayWebhook
+// 3. CALLABLE: createCodOrder
+// ─────────────────────────────────────────────────────────────────────────────
+exports.createCodOrder = onCall(
+    { cors: true },
+    async (request) => {
+        const data = request.data || {};
+        const clientItems = data.items || [];
+        const shippingAddress = data.shippingAddress || {};
+        const promoCode = (data.promoCode || "").trim().toUpperCase();
+
+        if (!Array.isArray(clientItems) || clientItems.length === 0) {
+            throw new HttpsError("invalid-argument", "Cart is empty. Please select an artisanal weave.");
+        }
+
+        // Strictly re-calculate subtotal on the server using authoritative product prices
+        let subtotal = 0;
+        const verifiedItems = [];
+
+        for (const item of clientItems) {
+            const pid = item.productId || item.id;
+            const qty = Math.max(1, Math.min(10, Number(item.quantity || 1)));
+            const product = await getAuthoritativeProduct(pid);
+
+            if (!product || product.priceInr <= 0) {
+                throw new HttpsError(
+                    "not-found",
+                    `Artisanal piece with ID '${pid}' could not be verified in store catalog.`
+                );
+            }
+
+            const itemTotal = product.priceInr * qty;
+            subtotal += itemTotal;
+
+            verifiedItems.push({
+                productId: pid,
+                title: product.title,
+                variant: item.variant || item.colorName || "Standard",
+                quantity: qty,
+                unitPriceInr: product.priceInr,
+                totalInr: itemTotal
+            });
+        }
+
+        // Compute discount, shipping, and grand total
+        const discount = promoCode === "FIRST10" ? Math.round(subtotal * 0.10) : 0;
+        const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
+        const grandTotalInr = Math.max(0, subtotal - discount + shipping);
+        const amountInPaise = Math.round(grandTotalInr * 100);
+
+        const currentYear = new Date().getFullYear();
+        const randomNum = Math.floor(1000 + Math.random() * 9000);
+        const firestoreOrderId = `ART-${currentYear}-${randomNum}`;
+
+        const pricing = {
+            subtotal: subtotal,
+            subtotalInr: subtotal,
+            discount: discount,
+            discountInr: discount,
+            shipping: shipping,
+            shippingInr: shipping,
+            grandTotal: grandTotalInr,
+            grandTotalInr: grandTotalInr,
+            amountInPaise: amountInPaise,
+            promoCode: promoCode || null
+        };
+
+        const orderDoc = {
+            orderId: firestoreOrderId,
+            userId: request.auth ? request.auth.uid : null,
+            items: verifiedItems,
+            pricing: pricing,
+            shippingAddress: {
+                receiverName: shippingAddress.receiverName || "Customer",
+                receiverPhone: shippingAddress.receiverPhone || "",
+                houseFlat: shippingAddress.houseFlat || "",
+                floor: shippingAddress.floor || "",
+                street: shippingAddress.street || "",
+                area: shippingAddress.area || "",
+                city: shippingAddress.city || "",
+                pinCode: shippingAddress.pinCode || ""
+            },
+            paymentMethod: "COD",
+            paymentStatus: "PENDING_COD",
+            status: "CONFIRMED",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection("orders").doc(firestoreOrderId).set(orderDoc);
+
+        // Clear user cart in Firestore if authenticated
+        if (request.auth && request.auth.uid) {
+            try {
+                const cartSnap = await db.collection("users").doc(request.auth.uid).collection("cart").get();
+                if (!cartSnap.empty) {
+                    const batch = db.batch();
+                    cartSnap.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+                    await batch.commit();
+                }
+            } catch (cartErr) {
+                console.warn("Could not clear user cart on COD order:", cartErr.message);
+            }
+        }
+
+        return {
+            success: true,
+            firestoreOrderId: firestoreOrderId,
+            pricing: pricing
+        };
+    }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. HTTP WEBHOOK: razorpayWebhook
 // ─────────────────────────────────────────────────────────────────────────────
 exports.razorpayWebhook = onRequest(
     { secrets: [razorpayWebhookSecret] },

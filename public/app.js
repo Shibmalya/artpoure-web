@@ -1488,25 +1488,36 @@ async function validateAndPlaceOrder() {
 
     // If Cash on Delivery is selected
     if (state.selectedPaymentMethod === 'COD') {
-        const orderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-        const orderPayload = {
-            orderId,
-            items: state.cart.map(i => ({
-                productId: i.product.id,
-                title: i.product.editorialTitle,
-                variant: i.variant.colorName,
-                quantity: i.quantity,
-                priceInr: i.product.priceInr,
-                totalInr: i.product.priceInr * i.quantity
-            })),
-            pricing: { subtotal, discount, shipping, grandTotal, promoCode: state.appliedPromoCode || null },
-            shippingAddress: { receiverName, receiverPhone, houseFlat, floor, street, area, city, pinCode },
-            paymentMethod: "COD",
-            status: "CONFIRMED",
-            createdAt: new Date().toISOString()
-        };
-        setDoc(doc(db, "orders", orderId), orderPayload).catch(err => console.warn("Firestore COD fallback:", err));
-        handleOrderSuccessDisplay(orderId, "Insured COD", grandTotal, receiverName, receiverPhone, updatedAddrObj);
+        setPlaceOrderBtnLoading("CONFIRMING CASH ON DELIVERY...");
+        try {
+            const createCodCallable = httpsCallable(functions, "createCodOrder");
+            const codRes = await createCodCallable({
+                items: state.cart.map(i => ({
+                    productId: i.product.id,
+                    quantity: i.quantity,
+                    variant: i.variant.colorName
+                })),
+                shippingAddress: {
+                    receiverName,
+                    receiverPhone,
+                    houseFlat,
+                    floor,
+                    street,
+                    area,
+                    city,
+                    pinCode
+                },
+                promoCode: state.appliedPromoCode || null
+            });
+
+            const { firestoreOrderId, pricing } = codRes.data || {};
+            const finalTotal = (pricing && pricing.grandTotal) ? pricing.grandTotal : grandTotal;
+            handleOrderSuccessDisplay(firestoreOrderId, "Insured COD", finalTotal, receiverName, receiverPhone, updatedAddrObj);
+        } catch (err) {
+            console.error("COD order creation error:", err);
+            alert(`Failed to place Cash on Delivery order: ${err.message || err}. Please try again.`);
+            updatePlaceOrderBtnText(grandTotal);
+        }
         return;
     }
 
