@@ -675,22 +675,35 @@ body {
 
 .swatch-group {
     display: flex;
-    gap: 5px;
     align-items: center;
+    padding: 2px 0;
 }
 
 .swatch-dot {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     cursor: pointer;
-    border: 1px solid rgba(0,0,0,0.15);
-    transition: transform 0.2s ease;
+    border: 1.5px solid var(--surface, #FFFFFF);
+    margin-left: -5px;
+    position: relative;
+    transition: transform 0.2s ease, z-index 0.2s ease, box-shadow 0.2s ease;
+}
+
+.swatch-dot:first-child {
+    margin-left: 0;
+}
+
+.swatch-dot:hover {
+    transform: scale(1.2);
+    z-index: 4;
 }
 
 .swatch-dot.active {
-    transform: scale(1.25);
-    box-shadow: 0 0 0 1.5px var(--accent-gold);
+    transform: scale(1.2);
+    border-color: var(--text-primary, #1A1A1A);
+    box-shadow: 0 0 0 1.5px var(--accent-gold, #8C6D3F);
+    z-index: 5;
 }
 
 .quick-add-btn {
@@ -698,14 +711,19 @@ body {
     color: #FFFFFF;
     border: none;
     border-radius: 50%;
-    width: 38px;
-    height: 38px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: transform 0.2s ease, background-color 0.2s ease;
     flex-shrink: 0;
+}
+
+.quick-add-btn svg {
+    width: 12px;
+    height: 12px;
 }
 
 .quick-add-btn:hover {
