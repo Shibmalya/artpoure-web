@@ -1,13 +1,14 @@
 const crypto = require("crypto");
-const admin = require("firebase-admin");
+const { initializeApp, getApps } = require("firebase-admin/app");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const Razorpay = require("razorpay");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 
-if (!admin.apps.length) {
-    admin.initializeApp();
+if (!getApps().length) {
+    initializeApp();
 }
-const db = admin.firestore();
+const db = getFirestore();
 
 // Secrets managed securely via Cloud Secret Manager (v2)
 // Loaded via: firebase functions:secrets:set RAZORPAY_KEY_SECRET
@@ -182,7 +183,7 @@ exports.createRazorpayOrder = onCall(
             status: "PENDING",
             paymentStatus: "PENDING",
             paymentMethod: "RAZORPAY",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            createdAt: FieldValue.serverTimestamp()
         };
 
         await db.collection("orders").doc(firestoreOrderId).set(orderDoc);
@@ -245,7 +246,7 @@ exports.verifyRazorpayPayment = onCall(
             paymentStatus: "PAID",
             razorpayPaymentId: razorpayPaymentId,
             razorpaySignature: razorpaySignature,
-            paidAt: admin.firestore.FieldValue.serverTimestamp()
+            paidAt: FieldValue.serverTimestamp()
         });
 
         // Clear user cart in Firestore if authenticated
@@ -356,7 +357,7 @@ exports.createCodOrder = onCall(
             paymentMethod: "COD",
             paymentStatus: "PENDING_COD",
             status: "CONFIRMED",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            createdAt: FieldValue.serverTimestamp()
         };
 
         await db.collection("orders").doc(firestoreOrderId).set(orderDoc);
@@ -449,7 +450,7 @@ exports.razorpayWebhook = onRequest(
                                 status: "CONFIRMED",
                                 paymentStatus: "PAID",
                                 razorpayPaymentId: rzpPaymentId || currentData.razorpayPaymentId || "webhook-confirmed",
-                                webhookConfirmedAt: admin.firestore.FieldValue.serverTimestamp()
+                                webhookConfirmedAt: FieldValue.serverTimestamp()
                             });
                             console.log(`Order ${orderSnap.id} confirmed via webhook.`);
                         }
@@ -521,7 +522,7 @@ exports.api = onRequest(
                     status: "PENDING",
                     paymentStatus: "PENDING",
                     paymentMethod: "RAZORPAY",
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    createdAt: FieldValue.serverTimestamp()
                 });
 
                 return res.status(200).json({
@@ -557,7 +558,7 @@ exports.api = onRequest(
                         status: "CONFIRMED",
                         paymentStatus: "PAID",
                         razorpayPaymentId: razorpay_payment_id,
-                        paidAt: admin.firestore.FieldValue.serverTimestamp()
+                        paidAt: FieldValue.serverTimestamp()
                     });
                 }
 
