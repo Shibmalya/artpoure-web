@@ -127,16 +127,36 @@
                                     <option value="CUSTOM">Hand-printed / Hand-painted / Custom</option>
                                 </select>
                             </div>
+                            <div class="form-field-group">
+                                <label for="prodGender">Target Gender *</label>
+                                <select id="prodGender" class="form-select" required>
+                                    <option value="WOMEN" selected>WOMEN</option>
+                                    <option value="MEN">MEN</option>
+                                    <option value="KIDS">KIDS</option>
+                                    <option value="UNISEX">UNISEX</option>
+                                </select>
+                            </div>
                         </div>
 
-                        <!-- Feature in New Arrivals Showcase Option (Always Visible) -->
+                        <!-- Merchandising Showcase Options (New Arrivals, Curated Picks, Trending) -->
                         <div id="newArrivalsOptionRow" class="form-field-group" style="background: rgba(184, 134, 11, 0.12); border: 2px solid #B8860B; padding: 14px 18px; border-radius: 10px; margin: 16px 0;">
-                            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; font-weight: 700; color: #5C4033; font-size: 14px;">
-                                <input type="checkbox" id="prodInNewArrivals" style="width: 22px; height: 22px; accent-color: #B8860B; cursor: pointer;">
-                                <span>✦ Feature in New Arrivals (Hero Carousel on App & Web)</span>
-                            </label>
-                            <small class="field-hint" style="margin-left: 34px; margin-top: 6px; display: block; color: #5C4033; font-size: 12px; line-height: 1.4;">
-                                Check this box to feature this piece in the <strong>New Arrivals scrolling showcase</strong>. In the mobile app, tapping a handcrafted saree triggers the Starburst Supernova animation directly into ArtClusive!
+                            <div style="font-weight: 700; color: #5C4033; font-size: 13px; margin-bottom: 10px; letter-spacing: 0.5px;">✦ MERCHANDISING & EDITORIAL HIGHLIGHTS</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; color: #5C4033; font-size: 13px;">
+                                    <input type="checkbox" id="prodInNewArrivals" style="width: 20px; height: 20px; accent-color: #B8860B; cursor: pointer;">
+                                    <span>Feature in New Arrivals</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; color: #5C4033; font-size: 13px;">
+                                    <input type="checkbox" id="prodIsCurated" style="width: 20px; height: 20px; accent-color: #B8860B; cursor: pointer;">
+                                    <span>Pin to Curated Picks</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 700; color: #5C4033; font-size: 13px;">
+                                    <input type="checkbox" id="prodIsTrending" style="width: 20px; height: 20px; accent-color: #B8860B; cursor: pointer;">
+                                    <span>Pin to Trending</span>
+                                </label>
+                            </div>
+                            <small class="field-hint" style="margin-top: 8px; display: block; color: #5C4033; font-size: 11.5px; line-height: 1.4;">
+                                Controls placement across the <strong>New Arrivals scrolling showcase</strong>, <strong>Curated Picks horizontal rail</strong>, and trending sections.
                             </small>
                         </div>
 
@@ -174,9 +194,16 @@
                             </div>
                         </div>
 
-                        <div class="form-field-group">
-                            <label for="prodTrustBadge">Trust Badge Text</label>
-                            <input type="text" id="prodTrustBadge" class="form-input" placeholder="e.g. Silk Mark Certified or Artpoure Authenticity Certificate">
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodTrustBadge">Trust Badge Text</label>
+                                <input type="text" id="prodTrustBadge" class="form-input" placeholder="e.g. Silk Mark Certified or Artpoure Authenticity Certificate">
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodOccasionTags">Occasion & Style Tags</label>
+                                <input type="text" id="prodOccasionTags" class="form-input" placeholder="e.g. Wedding, Festive, Hand-Painted, Gifting">
+                                <small class="field-hint">Comma-separated tags for personalized user affinity</small>
+                            </div>
                         </div>
 
                         <div class="form-field-group">

@@ -130,7 +130,15 @@ service cloud.firestore {
     }
 
     // =========================================================================
-    // 5. CATCH-ALL DEFAULT DENY
+    // 5. WAITLIST & NOTIFY INTEREST (waitlist/{waitlistId})
+    // =========================================================================
+    match /waitlist/{waitlistId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // 6. CATCH-ALL DEFAULT DENY
     // =========================================================================
     // Restricts any unmapped collections from unauthorized access.
     match /{document=**} {

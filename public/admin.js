@@ -632,6 +632,15 @@ function initNewProductForm() {
     document.getElementById('prodId').dataset.autoSlugified = 'false';
     const newArrivalsCheck = document.getElementById('prodInNewArrivals');
     if (newArrivalsCheck) newArrivalsCheck.checked = false;
+    const isCuratedCheck = document.getElementById('prodIsCurated');
+    if (isCuratedCheck) isCuratedCheck.checked = false;
+    const isTrendingCheck = document.getElementById('prodIsTrending');
+    if (isTrendingCheck) isTrendingCheck.checked = false;
+    const genderSelect = document.getElementById('prodGender');
+    if (genderSelect) genderSelect.value = 'WOMEN';
+    const occasionTagsInput = document.getElementById('prodOccasionTags');
+    if (occasionTagsInput) occasionTagsInput.value = '';
+
     el.variantsContainer.innerHTML = '';
     // Default first variant
     createVariantCard({
@@ -657,9 +666,24 @@ function editProduct(productId) {
     document.getElementById('prodEditorialTitle').value = prod.editorialTitle || '';
     document.getElementById('prodFullName').value = prod.fullName || '';
     document.getElementById('prodCategory').value = prod.category || 'SAREES';
+    const genderSelect = document.getElementById('prodGender');
+    if (genderSelect) genderSelect.value = prod.gender || 'WOMEN';
+
     const newArrivalsCheck = document.getElementById('prodInNewArrivals');
     if (newArrivalsCheck) {
         newArrivalsCheck.checked = !!(prod.inNewArrivals || prod.isNewArrival);
+    }
+    const isCuratedCheck = document.getElementById('prodIsCurated');
+    if (isCuratedCheck) {
+        isCuratedCheck.checked = !!prod.isCurated;
+    }
+    const isTrendingCheck = document.getElementById('prodIsTrending');
+    if (isTrendingCheck) {
+        isTrendingCheck.checked = !!prod.isTrending;
+    }
+    const occasionTagsInput = document.getElementById('prodOccasionTags');
+    if (occasionTagsInput) {
+        occasionTagsInput.value = Array.isArray(prod.occasionTags) ? prod.occasionTags.join(', ') : (prod.occasionTags || '');
     }
 
     document.getElementById('prodPriceInr').value = prod.priceInr || '';
@@ -704,6 +728,55 @@ function confirmDeleteProduct(productId) {
     );
 }
 
+/**
+ * Client-Side Image Compression using HTML Canvas before Firebase Storage upload.
+ * Resizes proportionally if max(width, height) > maxDimension (default 1200px)
+ * and exports as image/webp blob (quality 0.82) with fallback to original file.
+ */
+async function compressImageToWebP(file, maxDimension = 1200, quality = 0.82) {
+    if (!file || !file.type.startsWith('image/')) return file;
+    if (file.type.includes('svg')) return file;
+
+    return new Promise((resolve) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            let { width, height } = img;
+            if (width > maxDimension || height > maxDimension) {
+                if (width > height) {
+                    height = Math.round((height * maxDimension) / width);
+                    width = maxDimension;
+                } else {
+                    width = Math.round((width * maxDimension) / height);
+                    height = maxDimension;
+                }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                if (blob && blob.size > 0 && blob.size < file.size) {
+                    const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                    const webpFile = new File([blob], `${baseName}.webp`, { type: 'image/webp' });
+                    resolve(webpFile);
+                } else {
+                    // Fall back to original file if compression failed or didn't reduce size
+                    resolve(file);
+                }
+            }, 'image/webp', quality);
+        };
+        img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(file);
+        };
+        img.src = objectUrl;
+    });
+}
+
 // Form Submission: Uploads to Firebase Storage + Writes to Firestore
 el.productEditForm.addEventListener('submit', async e => {
     e.preventDefault();
@@ -712,6 +785,7 @@ el.productEditForm.addEventListener('submit', async e => {
     const editorialTitle = document.getElementById('prodEditorialTitle').value.trim();
     const fullName = document.getElementById('prodFullName').value.trim();
     const category = document.getElementById('prodCategory').value.trim();
+    const gender = document.getElementById('prodGender')?.value?.trim() || 'WOMEN';
     const priceInr = Number(document.getElementById('prodPriceInr').value);
     const availableOptionsRaw = document.getElementById('prodAvailableOptions').value.trim();
     const topLeftSpec = document.getElementById('prodTopLeftSpec').value.trim();
@@ -759,12 +833,12 @@ el.productEditForm.addEventListener('submit', async e => {
                 if (item.type === 'existing' && item.url) {
                     resolvedUrls.push(item.url);
                 } else if (item.type === 'file' && item.file) {
-                    el.formProgressMessage.textContent = `Uploading photo ${j + 1}/${imageItems.length} for variant "${colorName}"...`;
-                    const file = item.file;
-                    const fileExt = file.name.split('.').pop() || 'jpg';
+                    el.formProgressMessage.textContent = `Compressing & uploading photo ${j + 1}/${imageItems.length} for variant "${colorName}"...`;
+                    const fileToUpload = await compressImageToWebP(item.file, 1200, 0.82);
+                    const fileExt = fileToUpload.type === 'image/webp' ? 'webp' : (fileToUpload.name.split('.').pop() || 'jpg');
                     const storagePath = `products/${prodId}/${vId}_${Date.now()}_${j}.${fileExt}`;
                     const storageRef = ref(storage, storagePath);
-                    const snapshot = await uploadBytes(storageRef, file);
+                    const snapshot = await uploadBytes(storageRef, fileToUpload);
                     const downloadUrl = await getDownloadURL(snapshot.ref);
                     resolvedUrls.push(downloadUrl);
                 }
@@ -792,12 +866,22 @@ el.productEditForm.addEventListener('submit', async e => {
             : ['Free Size'];
 
         const inNewArrivals = !!(document.getElementById('prodInNewArrivals')?.checked);
+        const isCurated = !!(document.getElementById('prodIsCurated')?.checked);
+        const isTrending = !!(document.getElementById('prodIsTrending')?.checked);
+        const occasionTagsRaw = document.getElementById('prodOccasionTags')?.value?.trim() || '';
+        const occasionTags = occasionTagsRaw
+            ? occasionTagsRaw.split(',').map(s => s.trim()).filter(Boolean)
+            : [];
 
         const productDoc = {
             id: prodId,
             editorialTitle: editorialTitle.toUpperCase(),
             fullName: fullName,
             category: category,
+            gender: gender,
+            isCurated: isCurated,
+            isTrending: isTrending,
+            occasionTags: occasionTags,
             inNewArrivals: inNewArrivals,
             isNewArrival: inNewArrivals,
             priceInr: priceInr,
