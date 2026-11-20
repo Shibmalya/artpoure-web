@@ -321,6 +321,7 @@ function renderProductsGrid() {
                 <div class="card-image-wrap">
                     <img src="${thumbnail}" alt="${prod.fullName || prod.id}" class="card-product-img" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80'">
                     <span class="card-category-badge">${prod.category || 'HEIRLOOM'}</span>
+                    ${(prod.inNewArrivals || prod.isNewArrival) ? '<span class="card-category-badge" style="top: 36px; background: rgba(184, 134, 11, 0.95); color: #fff;">✦ NEW ARRIVAL</span>' : ''}
                     <span class="card-price-badge">₹${formattedPrice}</span>
                 </div>
                 <div class="card-body">
@@ -586,11 +587,30 @@ el.addVariantBtn.addEventListener('click', () => {
     });
 });
 
+// Toggle Handprinted New Arrivals Showcase checkbox visibility
+function updateNewArrivalsOptionVisibility() {
+    const cat = document.getElementById('prodCategory').value;
+    const row = document.getElementById('newArrivalsOptionRow');
+    const check = document.getElementById('prodInNewArrivals');
+    if (row && check) {
+        if (cat === 'CUSTOM') {
+            row.style.display = 'block';
+        } else {
+            row.style.display = 'none';
+            check.checked = false;
+        }
+    }
+}
+document.getElementById('prodCategory').addEventListener('change', updateNewArrivalsOptionVisibility);
+
 function initNewProductForm() {
     state.editingProductId = null;
     el.productEditForm.reset();
     document.getElementById('prodId').disabled = false;
     document.getElementById('prodId').dataset.autoSlugified = 'false';
+    const newArrivalsCheck = document.getElementById('prodInNewArrivals');
+    if (newArrivalsCheck) newArrivalsCheck.checked = false;
+    updateNewArrivalsOptionVisibility();
     el.variantsContainer.innerHTML = '';
     // Default first variant
     createVariantCard({
@@ -616,6 +636,12 @@ function editProduct(productId) {
     document.getElementById('prodEditorialTitle').value = prod.editorialTitle || '';
     document.getElementById('prodFullName').value = prod.fullName || '';
     document.getElementById('prodCategory').value = prod.category || 'SAREES';
+    const newArrivalsCheck = document.getElementById('prodInNewArrivals');
+    if (newArrivalsCheck) {
+        newArrivalsCheck.checked = !!(prod.inNewArrivals || prod.isNewArrival);
+    }
+    updateNewArrivalsOptionVisibility();
+
     document.getElementById('prodPriceInr').value = prod.priceInr || '';
     document.getElementById('prodAvailableOptions').value = Array.isArray(prod.availableOptions) ? prod.availableOptions.join(', ') : (prod.availableOptions || '');
     document.getElementById('prodTopLeftSpec').value = prod.topLeftSpec || '';
@@ -745,11 +771,16 @@ el.productEditForm.addEventListener('submit', async e => {
             ? availableOptionsRaw.split(',').map(s => s.trim()).filter(Boolean)
             : ['Free Size'];
 
+        const inNewArrivals = (category === 'CUSTOM')
+            ? (document.getElementById('prodInNewArrivals')?.checked || false)
+            : false;
+
         const productDoc = {
             id: prodId,
             editorialTitle: editorialTitle.toUpperCase(),
             fullName: fullName,
             category: category,
+            inNewArrivals: inNewArrivals,
             priceInr: priceInr,
             availableOptions: availableOptions,
             topLeftSpec: topLeftSpec,
