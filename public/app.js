@@ -689,25 +689,27 @@ export async function submitWaitlist() {
     const submitBtn = document.getElementById('submitWaitlistBtn');
     if (!input || !submitBtn) return;
 
-    const contact = input.value.trim();
-    if (!contact || contact.length < 5) {
+    const contact = input.value.trim().slice(0, 120);
+    if (!contact || contact.length < 6) {
         if (err) {
-            err.textContent = "Please enter a valid WhatsApp number or email address.";
+            err.textContent = "Please enter a valid WhatsApp number or email address (at least 6 characters).";
             err.style.display = 'block';
         }
         return;
     }
+    if (err) err.style.display = 'none';
 
     submitBtn.disabled = true;
     submitBtn.textContent = "SAVING...";
 
     try {
         await ensureAuthSession();
-        const categoryName = overlay?.dataset.targetCategory || state.selectedSubCategory || state.selectedCategory || 'GENERAL';
+        const rawCategory = overlay?.dataset.targetCategory || state.selectedSubCategory || state.selectedCategory || 'GENERAL';
+        const cleanCategory = String(rawCategory).trim().slice(0, 50) || 'GENERAL';
         const docData = {
-            categoryName: categoryName,
+            category: cleanCategory,
             contact: contact,
-            userId: auth.currentUser ? auth.currentUser.uid : 'anonymous',
+            userId: auth.currentUser ? auth.currentUser.uid : null,
             createdAt: serverTimestamp()
         };
 

@@ -133,7 +133,7 @@ service cloud.firestore {
     // 5. WAITLIST & NOTIFY INTEREST (waitlist/{waitlistId})
     // =========================================================================
     match /waitlist/{waitlistId} {
-      allow create: if true;
+      allow create: if request.resource.data.keys().hasOnly(['category', 'contact', 'userId', 'createdAt']) && request.resource.data.category is string && request.resource.data.category.size() > 0 && request.resource.data.category.size() <= 50 && request.resource.data.contact is string && request.resource.data.contact.size() >= 6 && request.resource.data.contact.size() <= 120 && ((request.auth == null && request.resource.data.userId == null) || (request.auth != null && request.resource.data.userId == request.auth.uid));
       allow read, update, delete: if isAdmin();
     }
 
