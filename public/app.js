@@ -14,6 +14,8 @@ import {
     doc,
     setDoc,
     getDoc,
+    query,
+    where,
     serverTimestamp,
     onAuthStateChanged,
     signInAnonymously,
@@ -22,7 +24,10 @@ import {
     signInWithPopup,
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
-    updateProfile
+    updateProfile,
+    linkWithPopup,
+    linkWithCredential,
+    EmailAuthProvider
 } from './firebase-config.js';
 
 // --- AUTHENTICATION SESSION HELPER ---
@@ -380,8 +385,12 @@ async function init() {
     setupEventListeners();
     updateCurrentAddressDisplay();
     updateProfileModalDisplay();
-    onAuthStateChanged(auth, () => {
+    onAuthStateChanged(auth, async (user) => {
         updateProfileModalDisplay();
+        if (user && !user.isAnonymous) {
+            const priorAnonUid = localStorage.getItem('artpoure_prior_anonymous_uid');
+            await preserveAndMergeGuestData(priorAnonUid, user.uid);
+        }
     });
     await fetchCatalog();
     setupHeroShowcase();
@@ -1928,9 +1937,29 @@ function setupEventListeners() {
                     updateProfileModalDisplay();
                 }
             } else {
+                const current = auth.currentUser;
+                const isAnon = current && current.isAnonymous;
+                const priorAnonUid = isAnon ? current.uid : null;
+                if (priorAnonUid) {
+                    localStorage.setItem('artpoure_prior_anonymous_uid', priorAnonUid);
+                }
+
                 try {
                     const provider = new GoogleAuthProvider();
-                    await signInWithPopup(auth, provider);
+                    if (isAnon) {
+                        try {
+                            const linkRes = await linkWithPopup(current, provider);
+                            console.log("Upgraded anonymous user via linkWithPopup in-place! UID:", linkRes.user?.uid);
+                            await preserveAndMergeGuestData(priorAnonUid, linkRes.user?.uid);
+                            updateProfileModalDisplay();
+                            return;
+                        } catch (linkErr) {
+                            console.warn("linkWithPopup failed, falling back to signInWithPopup:", linkErr);
+                        }
+                    }
+
+                    const signRes = await signInWithPopup(auth, provider);
+                    await preserveAndMergeGuestData(priorAnonUid, signRes.user?.uid);
                     updateProfileModalDisplay();
                 } catch (err) {
                     console.log("Popup sign in cancelled or blocked:", err);
@@ -1938,12 +1967,27 @@ function setupEventListeners() {
                     if (email && email.includes('@')) {
                         const pass = prompt("Enter password (minimum 6 characters):");
                         if (pass && pass.length >= 6) {
+                            const credential = EmailAuthProvider.credential(email.trim(), pass);
+                            if (isAnon) {
+                                try {
+                                    const linkRes = await linkWithCredential(current, credential);
+                                    console.log("Upgraded anonymous user via linkWithCredential in-place! UID:", linkRes.user?.uid);
+                                    await preserveAndMergeGuestData(priorAnonUid, linkRes.user?.uid);
+                                    updateProfileModalDisplay();
+                                    return;
+                                } catch (linkErr) {
+                                    console.warn("linkWithCredential failed, attempting direct sign in/up:", linkErr);
+                                }
+                            }
+
                             try {
-                                await signInWithEmailAndPassword(auth, email.trim(), pass);
+                                const authRes = await signInWithEmailAndPassword(auth, email.trim(), pass);
+                                await preserveAndMergeGuestData(priorAnonUid, authRes.user?.uid);
                                 updateProfileModalDisplay();
                             } catch (authErr) {
                                 try {
-                                    await createUserWithEmailAndPassword(auth, email.trim(), pass);
+                                    const createRes = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+                                    await preserveAndMergeGuestData(priorAnonUid, createRes.user?.uid);
                                     updateProfileModalDisplay();
                                 } catch (createErr) {
                                     alert("Authentication failed: " + (createErr.message || authErr.message));
@@ -1978,6 +2022,77 @@ function setupEventListeners() {
     document.getElementById('closeWaitlistModalBtn')?.addEventListener('click', closeWaitlistModal);
     document.getElementById('cancelWaitlistBtn')?.addEventListener('click', closeWaitlistModal);
     document.getElementById('submitWaitlistBtn')?.addEventListener('click', submitWaitlist);
+}
+
+// --- GUEST TO PERMANENT ACCOUNT DATA CONTINUITY ---
+async function preserveAndMergeGuestData(priorAnonymousUid, newUid) {
+    if (!newUid) return;
+    console.log(`Preserving guest data during account upgrade: priorAnon=${priorAnonymousUid} -> newUid=${newUid}`);
+
+    // 1. Fetch remote orders for the signed-in account from Firestore (orders collection)
+    try {
+        const ordersQuery = query(collection(db, "orders"), where("userId", "==", newUid));
+        const ordersSnapshot = await getDocs(ordersQuery);
+        const remoteOrders = [];
+        ordersSnapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            remoteOrders.push({
+                orderId: data.orderId || data.id || docSnap.id,
+                ...data
+            });
+        });
+
+        if (remoteOrders.length > 0) {
+            const remoteMap = new Map();
+            remoteOrders.forEach(o => remoteMap.set(o.orderId || o.id, o));
+            const localOrders = state.orders || [];
+            // Preserve all locally placed guest orders that aren't already represented remotely
+            const merged = [...remoteOrders, ...localOrders.filter(o => !remoteMap.has(o.orderId || o.id))];
+            state.orders = merged;
+            localStorage.setItem('artpoure_orders', JSON.stringify(merged));
+            renderOrdersList();
+        }
+    } catch (e) {
+        console.warn("Could not sync remote orders during upgrade:", e);
+    }
+
+    // 2. Fetch remote appointments for the signed-in account
+    try {
+        const aptQuery = query(collection(db, "appointments"), where("userId", "==", newUid));
+        const aptSnapshot = await getDocs(aptQuery);
+        const remoteApts = [];
+        aptSnapshot.forEach(docSnap => {
+            remoteApts.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        if (remoteApts.length > 0) {
+            const remoteAptMap = new Map();
+            remoteApts.forEach(a => remoteAptMap.set(a.id, a));
+            const localApts = state.appointments || [];
+            const mergedApts = [...remoteApts, ...localApts.filter(a => !remoteAptMap.has(a.id))];
+            state.appointments = mergedApts;
+            localStorage.setItem('artpoure_appointments', JSON.stringify(mergedApts));
+            renderAppointmentsList();
+        }
+    } catch (e) {
+        console.warn("Could not sync remote appointments during upgrade:", e);
+    }
+
+    // 3. For any local appointments placed during the guest session, attempt to link them in Firestore
+    if (state.appointments && state.appointments.length > 0) {
+        for (const apt of state.appointments) {
+            try {
+                await setDoc(doc(db, "appointments", apt.id), { userId: newUid }, { merge: true });
+            } catch (_err) {
+                // If permission denied or already owned, gracefully keep in local state
+            }
+        }
+    }
+
+    localStorage.removeItem('artpoure_prior_anonymous_uid');
+    renderOrdersList();
+    renderAppointmentsList();
+    updateBadges();
 }
 
 // --- PROFILE MODAL CONTROLLERS (Exposed globally for bulletproof invocation) ---

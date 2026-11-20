@@ -10,7 +10,10 @@ import {
     signInAnonymously,
     GoogleAuthProvider,
     signInWithPopup,
-    updateProfile
+    updateProfile,
+    linkWithPopup,
+    linkWithCredential,
+    EmailAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
 import {
     getFirestore,
@@ -61,6 +64,9 @@ export {
     GoogleAuthProvider,
     signInWithPopup,
     updateProfile,
+    linkWithPopup,
+    linkWithCredential,
+    EmailAuthProvider,
     collection,
     addDoc,
     getDocs,
