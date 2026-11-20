@@ -15,9 +15,11 @@ service firebase.storage {
           request.auth.token.email_verified == true &&
           request.auth.token.email in [
             "artpoure@gmail.com",
+            "artpoure.official@gmail.com",
             "admin@artpoure.in",
             "shibmalyaananya@gmail.com",
-            "shibmalyada@gmail.com"
+            "shibmalyada@gmail.com",
+            "deyananya98@gmail.com"
           ]
         )
       );

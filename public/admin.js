@@ -30,9 +30,11 @@ import {
 // Authorized Admin Emails (must match firestore.rules and storage.rules)
 const ADMIN_EMAILS = [
     "artpoure@gmail.com",
+    "artpoure.official@gmail.com",
     "admin@artpoure.in",
     "shibmalyaananya@gmail.com",
-    "shibmalyada@gmail.com"
+    "shibmalyada@gmail.com",
+    "deyananya98@gmail.com"
 ];
 
 // App State
@@ -168,7 +170,7 @@ function checkAdminAuth(user) {
     }
 
     const email = (user.email || '').toLowerCase().trim();
-    const isAllowed = ADMIN_EMAILS.includes(email);
+    const isAllowed = ADMIN_EMAILS.some(allowed => allowed.toLowerCase().trim() === email);
 
     if (!isAllowed) {
         el.authGate.style.display = 'none';
