@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Artpoure Atelier • Private Admin Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+    <!-- AUTH GATE: Sign In Modal -->
+    <div id="authGate" class="auth-gate-screen">
+        <div class="auth-card">
+            <div class="auth-brand-mark">
+                <span class="gold-sparkle">✦</span>
+            </div>
+            <h1 class="auth-title">ARTPOURE</h1>
+            <p class="auth-subtitle">PRIVATE ATELIER ADMIN PORTAL</p>
+            <p class="auth-desc">Curator access only. Sign in with an authorized Artpoure administrator Google account to manage the luxury catalog, live orders, and couture consultations.</p>
+            <button id="googleSignInBtn" class="btn-gold-action">
+                <svg viewBox="0 0 24 24" class="google-icon" width="20" height="20">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Sign in with Google</span>
+            </button>
+            <div id="authErrorMsg" class="auth-error-msg" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- UNAUTHORIZED ACCOUNT SCREEN -->
+    <div id="unauthorizedScreen" class="auth-gate-screen" style="display: none;">
+        <div class="auth-card">
+            <div class="auth-brand-mark restricted">
+                <span>✕</span>
+            </div>
+            <h1 class="auth-title">ACCESS RESTRICTED</h1>
+            <p id="unauthorizedEmailDisplay" class="auth-desc" style="color: #E74C3C; font-weight: 500;"></p>
+            <p class="auth-desc">This Google account is not on the Artpoure administrative allowlist. If you believe this is an error, contact the master curator.</p>
+            <button id="unauthorizedSignOutBtn" class="btn-secondary-action">Sign Out</button>
+        </div>
+    </div>
+
+    <!-- MAIN ADMIN APPLICATION DASHBOARD -->
+    <div id="adminApp" class="admin-app" style="display: none;">
+        <!-- Top Navigation Bar -->
+        <header class="admin-header">
+            <div class="header-brand-container">
+                <span class="header-logo">ARTPOURE</span>
+                <span class="header-badge">ATELIER ADMIN</span>
+            </div>
+            <div class="header-user-profile">
+                <img id="adminUserAvatar" src="" alt="Admin Avatar" class="user-avatar" style="display: none;">
+                <div class="user-details-text">
+                    <span id="adminUserName" class="user-name">Admin</span>
+                    <span id="adminUserEmail" class="user-email"></span>
+                </div>
+                <button id="signOutBtn" class="btn-signout" title="Sign Out">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M16 13v-2H7V8l-5 4 5 4v-3zM20 3h-9c-1.1 0-2 .9-2 2v4h2V5h9v14h-9v-4H7v4c0 1.1.9 2 2 2h9c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                    <span>Sign Out</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="admin-nav-tabs">
+            <button class="nav-tab-btn active" data-tab="products">
+                <span class="tab-icon">✦</span>
+                <span>Products (<span id="productsCountBadge">0</span>)</span>
+            </button>
+            <button class="nav-tab-btn" data-tab="orders">
+                <span class="tab-icon">⚑</span>
+                <span>Orders (<span id="ordersCountBadge">0</span>)</span>
+            </button>
+            <button class="nav-tab-btn" data-tab="consultations">
+                <span class="tab-icon">❦</span>
+                <span>Consultations (<span id="consultationsCountBadge">0</span>)</span>
+            </button>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="admin-content-container">
+
+            <!-- ========================================================= -->
+            <!-- TAB 1: PRODUCTS (Catalog Manager) -->
+            <!-- ========================================================= -->
+            <section id="tab-products" class="admin-tab-section active">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Catalog Manager</h2>
+                        <p class="section-subtitle">Curate luxury heirlooms, handloom textiles, and dynamic color variants.</p>
+                    </div>
+                    <button id="toggleProductFormBtn" class="btn-primary-action">
+                        <span class="btn-icon">+</span>
+                        <span id="toggleProductFormText">New Product</span>
+                    </button>
+                </div>
+
+                <!-- Product Add / Edit Drawer / Form Panel -->
+                <div id="productFormPanel" class="form-drawer-card" style="display: none;">
+                    <div class="form-card-header">
+                        <h3 id="formPanelTitle" class="form-title">Create New Heilloom Piece</h3>
+                        <button id="closeProductFormBtn" class="btn-close-form" title="Close">✕</button>
+                    </div>
+                    <form id="productEditForm" class="admin-form" autocomplete="off">
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodId">Product ID (Slug) *</label>
+                                <input type="text" id="prodId" class="form-input" placeholder="e.g. saree-03 or kanjeevaram-gold" required>
+                                <small class="field-hint">Used as Firestore document ID. Letters, numbers, and dashes.</small>
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodCategory">Category *</label>
+                                <select id="prodCategory" class="form-select" required>
+                                    <option value="SAREES">SAREES</option>
+                                    <option value="CLOTHES">CLOTHES</option>
+                                    <option value="JEWELLERY">JEWELLERY</option>
+                                    <option value="FOOTWEAR">FOOTWEAR</option>
+                                    <option value="ACCESSORIES">ACCESSORIES</option>
+                                    <option value="CUSTOM">Custom / Hand-painted</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodEditorialTitle">Editorial Title *</label>
+                                <input type="text" id="prodEditorialTitle" class="form-input" placeholder="e.g. KANJEEVARAM or BANARASI" required>
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodFullName">Full Display Name *</label>
+                                <input type="text" id="prodFullName" class="form-input" placeholder="e.g. Heritage Temple Border Kanjeevaram Silk" required>
+                            </div>
+                        </div>
+
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodPriceInr">Price (INR ₹) *</label>
+                                <input type="number" id="prodPriceInr" class="form-input" placeholder="e.g. 24999" min="1" required>
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodAvailableOptions">Available Options / Sizes</label>
+                                <input type="text" id="prodAvailableOptions" class="form-input" placeholder="e.g. Free Size, 6.3m or S, M, L, XL">
+                                <small class="field-hint">Comma-separated options (leave blank for standard Free Size)</small>
+                            </div>
+                        </div>
+
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodTopLeftSpec">Top Left Spec Pill</label>
+                                <input type="text" id="prodTopLeftSpec" class="form-input" placeholder="e.g. 100% PURE SILK or KORVAI WEAVE">
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodTopRightSpec">Top Right Spec Pill</label>
+                                <input type="text" id="prodTopRightSpec" class="form-input" placeholder="e.g. GI TAGGED or 24K GOLD ZARI">
+                            </div>
+                        </div>
+
+                        <div class="form-field-group">
+                            <label for="prodTrustBadge">Trust Badge Text</label>
+                            <input type="text" id="prodTrustBadge" class="form-input" placeholder="e.g. Silk Mark Certified or Artpoure Authenticity Certificate">
+                        </div>
+
+                        <div class="form-field-group">
+                            <label for="prodDescription">Narrative Description *</label>
+                            <textarea id="prodDescription" class="form-textarea" rows="3" placeholder="Pure Mulberry silk Banarasi with intricate antique gold zari work and certified Silk Mark craftsmanship..." required></textarea>
+                        </div>
+
+                        <div class="form-grid-row">
+                            <div class="form-field-group">
+                                <label for="prodDetails">Craft & Fabric Details</label>
+                                <input type="text" id="prodDetails" class="form-input" placeholder="e.g. 100% Pure Silk • Kadwa Weave • Dry Clean Only • 6.5m with blouse">
+                            </div>
+                            <div class="form-field-group">
+                                <label for="prodCareInstructions">Care Instructions</label>
+                                <input type="text" id="prodCareInstructions" class="form-input" placeholder="e.g. Strictly Dry Clean Only • Store wrapped in unbleached muslin">
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Color Variants Builder -->
+                        <div class="variants-builder-section">
+                            <div class="variants-header">
+                                <div class="variants-title-wrap">
+                                    <h4 class="variants-title">Color Variants & Imagery *</h4>
+                                    <p class="variants-subtitle">Upload high-res product photos to Firebase Storage and pick palette hex codes.</p>
+                                </div>
+                                <button type="button" id="addVariantBtn" class="btn-secondary-action btn-sm">+ Add Color</button>
+                            </div>
+
+                            <div id="variantsContainer" class="variants-list">
+                                <!-- Variant cards injected dynamically -->
+                            </div>
+                        </div>
+
+                        <!-- Form Submission & Progress Feedback -->
+                        <div class="form-submit-bar">
+                            <div id="formProgressFeedback" class="form-progress-text" style="display: none;">
+                                <span class="spinner-inline"></span>
+                                <span id="formProgressMessage">Uploading photos to Firebase Storage...</span>
+                            </div>
+                            <div class="form-buttons-group">
+                                <button type="button" id="cancelFormBtn" class="btn-secondary-action">Cancel</button>
+                                <button type="submit" id="saveProductBtn" class="btn-gold-action">
+                                    <span class="btn-icon">💾</span>
+                                    <span>Save Heilloom to Catalog</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Search & Filters -->
+                <div class="catalog-controls-bar">
+                    <div class="search-input-wrap">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="productSearchInput" class="search-input" placeholder="Search products by title, ID, or fabric...">
+                    </div>
+                    <div class="filter-pills-scroll" id="productCategoryFilters">
+                        <button class="filter-pill active" data-category="ALL">All Categories</button>
+                        <button class="filter-pill" data-category="SAREES">Sarees</button>
+                        <button class="filter-pill" data-category="CLOTHES">Clothes</button>
+                        <button class="filter-pill" data-category="JEWELLERY">Jewellery</button>
+                        <button class="filter-pill" data-category="FOOTWEAR">Footwear</button>
+                        <button class="filter-pill" data-category="ACCESSORIES">Accessories</button>
+                    </div>
+                </div>
+
+                <!-- Products Grid / List -->
+                <div id="productsLoadingSpinner" class="loading-state-container">
+                    <div class="luxury-spinner"></div>
+                    <p class="loading-text">Fetching Artpoure Heirlooms from Firestore...</p>
+                </div>
+                <div id="productsEmptyState" class="empty-state-card" style="display: none;">
+                    <span class="empty-icon">✦</span>
+                    <h3>No Heirlooms Found</h3>
+                    <p>There are no products matching your search or in this collection.</p>
+                </div>
+                <div id="productsGrid" class="products-admin-grid">
+                    <!-- Products rendered via JS -->
+                </div>
+            </section>
+
+            <!-- ========================================================= -->
+            <!-- TAB 2: ORDERS (Fulfillment & Tracking) -->
+            <!-- ========================================================= -->
+            <section id="tab-orders" class="admin-tab-section">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Live Orders & Fulfillment</h2>
+                        <p class="section-subtitle">Manage customer orders, update delivery status, and log courier tracking.</p>
+                    </div>
+                    <button id="refreshOrdersBtn" class="btn-secondary-action btn-sm">
+                        <span>↻ Refresh Orders</span>
+                    </button>
+                </div>
+
+                <!-- Order Filter Pills -->
+                <div class="orders-controls-bar">
+                    <div class="search-input-wrap">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="orderSearchInput" class="search-input" placeholder="Search orders by ID, customer name, or phone...">
+                    </div>
+                    <div class="filter-pills-scroll" id="orderStatusFilters">
+                        <button class="filter-pill active" data-status="ALL">All Orders</button>
+                        <button class="filter-pill" data-status="PAID">Paid (Razorpay)</button>
+                        <button class="filter-pill" data-status="PENDING">Pending</button>
+                        <button class="filter-pill" data-status="COD">Cash on Delivery</button>
+                        <button class="filter-pill" data-status="SHIPPED">Shipped</button>
+                        <button class="filter-pill" data-status="DELIVERED">Delivered</button>
+                    </div>
+                </div>
+
+                <!-- Orders Container -->
+                <div id="ordersLoadingSpinner" class="loading-state-container">
+                    <div class="luxury-spinner"></div>
+                    <p class="loading-text">Fetching Live Orders from Firestore...</p>
+                </div>
+                <div id="ordersEmptyState" class="empty-state-card" style="display: none;">
+                    <span class="empty-icon">⚑</span>
+                    <h3>No Orders Found</h3>
+                    <p>No orders match the selected filter criteria.</p>
+                </div>
+                <div id="ordersList" class="orders-admin-list">
+                    <!-- Orders rendered via JS -->
+                </div>
+            </section>
+
+            <!-- ========================================================= -->
+            <!-- TAB 3: CONSULTATIONS (Atelier Appointments) -->
+            <!-- ========================================================= -->
+            <section id="tab-consultations" class="admin-tab-section">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Atelier Consultations</h2>
+                        <p class="section-subtitle">Private bespoke appointments booked via mobile app and web boutique.</p>
+                    </div>
+                    <button id="refreshConsultationsBtn" class="btn-secondary-action btn-sm">
+                        <span>↻ Refresh Appointments</span>
+                    </button>
+                </div>
+
+                <div class="orders-controls-bar">
+                    <div class="search-input-wrap">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="consultationSearchInput" class="search-input" placeholder="Search by client name, phone, or weave...">
+                    </div>
+                    <div class="filter-pills-scroll" id="consultationStatusFilters">
+                        <button class="filter-pill active" data-status="ALL">All</button>
+                        <button class="filter-pill" data-status="CONFIRMED">Confirmed</button>
+                        <button class="filter-pill" data-status="COMPLETED">Completed</button>
+                        <button class="filter-pill" data-status="CANCELLED">Cancelled</button>
+                    </div>
+                </div>
+
+                <div id="consultationsLoadingSpinner" class="loading-state-container">
+                    <div class="luxury-spinner"></div>
+                    <p class="loading-text">Fetching Consultations...</p>
+                </div>
+                <div id="consultationsEmptyState" class="empty-state-card" style="display: none;">
+                    <span class="empty-icon">❦</span>
+                    <h3>No Consultations Found</h3>
+                    <p>No bespoke atelier appointments booked yet.</p>
+                </div>
+                <div id="consultationsList" class="consultations-admin-grid">
+                    <!-- Appointments rendered via JS -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- MODAL CONFIRMATION DIALOG -->
+    <div id="confirmModal" class="confirm-modal-overlay" style="display: none;">
+        <div class="confirm-modal-card">
+            <h3 id="confirmModalTitle" class="confirm-modal-title">Confirm Action</h3>
+            <p id="confirmModalMessage" class="confirm-modal-message">Are you sure you want to perform this action?</p>
+            <div class="confirm-modal-actions">
+                <button id="confirmModalCancelBtn" class="btn-secondary-action">Cancel</button>
+                <button id="confirmModalProceedBtn" class="btn-danger-action">Delete Permanently</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modular Admin Script -->
+    <script type="module" src="admin.js"></script>
+</body>
+</html>

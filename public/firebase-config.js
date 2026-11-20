@@ -1,8 +1,38 @@
 // Firebase v10 Modular Web SDK Configuration
 // Matches backend credentials from app/google-services.json
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInAnonymously, GoogleAuthProvider, signInWithPopup, updateProfile } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, setDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+import {
+    getAuth,
+    onAuthStateChanged,
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    signInAnonymously,
+    GoogleAuthProvider,
+    signInWithPopup,
+    updateProfile
+} from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
+import {
+    getFirestore,
+    collection,
+    getDocs,
+    doc,
+    setDoc,
+    getDoc,
+    query,
+    where,
+    updateDoc,
+    deleteDoc,
+    orderBy,
+    serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+import {
+    getStorage,
+    ref,
+    uploadBytes,
+    getDownloadURL,
+    deleteObject
+} from "https://www.gstatic.com/firebasejs/10.9.0/firebase-storage.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-functions.js";
 
 const firebaseConfig = {
@@ -14,10 +44,11 @@ const firebaseConfig = {
     appId: "1:655692823133:web:bff8df28e420c0f300ebb4"
 };
 
-// Initialize Firebase App
+// Initialize Firebase App & Services
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
 export {
@@ -36,6 +67,14 @@ export {
     getDoc,
     query,
     where,
+    updateDoc,
+    deleteDoc,
+    orderBy,
+    serverTimestamp,
+    ref,
+    uploadBytes,
+    getDownloadURL,
+    deleteObject,
     getFunctions,
     httpsCallable
 };

@@ -1,0 +1,1092 @@
+// =============================================================================
+// ARTPOURE • PRIVATE ATELIER ADMIN PORTAL LOGIC
+// Catalog manager with Firebase Storage uploads, Orders & Consultations
+// =============================================================================
+
+import {
+    auth,
+    db,
+    storage,
+    onAuthStateChanged,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signOut,
+    collection,
+    getDocs,
+    doc,
+    setDoc,
+    getDoc,
+    updateDoc,
+    deleteDoc,
+    query,
+    orderBy,
+    serverTimestamp,
+    ref,
+    uploadBytes,
+    getDownloadURL,
+    deleteObject
+} from './firebase-config.js';
+
+// Authorized Admin Emails (must match firestore.rules and storage.rules)
+const ADMIN_EMAILS = [
+    "artpoure@gmail.com",
+    "admin@artpoure.in",
+    "shibmalyaananya@gmail.com",
+    "shibmalyada@gmail.com"
+];
+
+// App State
+const state = {
+    user: null,
+    products: [],
+    orders: [],
+    appointments: [],
+    currentTab: 'products',
+    editingProductId: null,
+    productFilterCategory: 'ALL',
+    productSearchQuery: '',
+    orderFilterStatus: 'ALL',
+    orderSearchQuery: '',
+    consultationFilterStatus: 'ALL',
+    consultationSearchQuery: '',
+    variantCounter: 0,
+    modalPendingAction: null
+};
+
+// DOM Elements
+const el = {
+    authGate: document.getElementById('authGate'),
+    unauthorizedScreen: document.getElementById('unauthorizedScreen'),
+    unauthorizedEmailDisplay: document.getElementById('unauthorizedEmailDisplay'),
+    unauthorizedSignOutBtn: document.getElementById('unauthorizedSignOutBtn'),
+    adminApp: document.getElementById('adminApp'),
+    googleSignInBtn: document.getElementById('googleSignInBtn'),
+    authErrorMsg: document.getElementById('authErrorMsg'),
+    adminUserAvatar: document.getElementById('adminUserAvatar'),
+    adminUserName: document.getElementById('adminUserName'),
+    adminUserEmail: document.getElementById('adminUserEmail'),
+    signOutBtn: document.getElementById('signOutBtn'),
+    navTabs: document.querySelectorAll('.nav-tab-btn'),
+    tabSections: document.querySelectorAll('.admin-tab-section'),
+    productsCountBadge: document.getElementById('productsCountBadge'),
+    ordersCountBadge: document.getElementById('ordersCountBadge'),
+    consultationsCountBadge: document.getElementById('consultationsCountBadge'),
+
+    // Products Tab
+    toggleProductFormBtn: document.getElementById('toggleProductFormBtn'),
+    toggleProductFormText: document.getElementById('toggleProductFormText'),
+    productFormPanel: document.getElementById('productFormPanel'),
+    closeProductFormBtn: document.getElementById('closeProductFormBtn'),
+    formPanelTitle: document.getElementById('formPanelTitle'),
+    productEditForm: document.getElementById('productEditForm'),
+    cancelFormBtn: document.getElementById('cancelFormBtn'),
+    variantsContainer: document.getElementById('variantsContainer'),
+    addVariantBtn: document.getElementById('addVariantBtn'),
+    formProgressFeedback: document.getElementById('formProgressFeedback'),
+    formProgressMessage: document.getElementById('formProgressMessage'),
+    saveProductBtn: document.getElementById('saveProductBtn'),
+    productSearchInput: document.getElementById('productSearchInput'),
+    productCategoryFilters: document.getElementById('productCategoryFilters'),
+    productsLoadingSpinner: document.getElementById('productsLoadingSpinner'),
+    productsEmptyState: document.getElementById('productsEmptyState'),
+    productsGrid: document.getElementById('productsGrid'),
+
+    // Orders Tab
+    refreshOrdersBtn: document.getElementById('refreshOrdersBtn'),
+    orderSearchInput: document.getElementById('orderSearchInput'),
+    orderStatusFilters: document.getElementById('orderStatusFilters'),
+    ordersLoadingSpinner: document.getElementById('ordersLoadingSpinner'),
+    ordersEmptyState: document.getElementById('ordersEmptyState'),
+    ordersList: document.getElementById('ordersList'),
+
+    // Consultations Tab
+    refreshConsultationsBtn: document.getElementById('refreshConsultationsBtn'),
+    consultationSearchInput: document.getElementById('consultationSearchInput'),
+    consultationStatusFilters: document.getElementById('consultationStatusFilters'),
+    consultationsLoadingSpinner: document.getElementById('consultationsLoadingSpinner'),
+    consultationsEmptyState: document.getElementById('consultationsEmptyState'),
+    consultationsList: document.getElementById('consultationsList'),
+
+    // Modal & Toast
+    toastContainer: document.getElementById('toastContainer'),
+    confirmModal: document.getElementById('confirmModal'),
+    confirmModalTitle: document.getElementById('confirmModalTitle'),
+    confirmModalMessage: document.getElementById('confirmModalMessage'),
+    confirmModalCancelBtn: document.getElementById('confirmModalCancelBtn'),
+    confirmModalProceedBtn: document.getElementById('confirmModalProceedBtn')
+};
+
+// =============================================================================
+// TOAST NOTIFICATIONS
+// =============================================================================
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : '✦';
+    toast.innerHTML = `<span style="color: var(--gold);">${icon}</span> <span>${message}</span>`;
+    el.toastContainer.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+// =============================================================================
+// CONFIRMATION DIALOG MODAL
+// =============================================================================
+function showConfirmModal(title, message, onProceed) {
+    el.confirmModalTitle.textContent = title;
+    el.confirmModalMessage.textContent = message;
+    state.modalPendingAction = onProceed;
+    el.confirmModal.style.display = 'flex';
+}
+
+function hideConfirmModal() {
+    el.confirmModal.style.display = 'none';
+    state.modalPendingAction = null;
+}
+
+el.confirmModalCancelBtn.addEventListener('click', hideConfirmModal);
+el.confirmModalProceedBtn.addEventListener('click', () => {
+    if (typeof state.modalPendingAction === 'function') {
+        state.modalPendingAction();
+    }
+    hideConfirmModal();
+});
+
+// =============================================================================
+// AUTHENTICATION & ACCESS CONTROL
+// =============================================================================
+function checkAdminAuth(user) {
+    if (!user) {
+        el.authGate.style.display = 'flex';
+        el.unauthorizedScreen.style.display = 'none';
+        el.adminApp.style.display = 'none';
+        return;
+    }
+
+    const email = (user.email || '').toLowerCase().trim();
+    const isAllowed = ADMIN_EMAILS.includes(email);
+
+    if (!isAllowed) {
+        el.authGate.style.display = 'none';
+        el.unauthorizedScreen.style.display = 'flex';
+        el.unauthorizedEmailDisplay.textContent = `Signed in as: ${user.email}`;
+        el.adminApp.style.display = 'none';
+        return;
+    }
+
+    // Authorized Admin User
+    state.user = user;
+    el.authGate.style.display = 'none';
+    el.unauthorizedScreen.style.display = 'none';
+    el.adminApp.style.display = 'flex';
+
+    el.adminUserName.textContent = user.displayName || 'Curator Admin';
+    el.adminUserEmail.textContent = user.email;
+    if (user.photoURL) {
+        el.adminUserAvatar.src = user.photoURL;
+        el.adminUserAvatar.style.display = 'block';
+    }
+
+    // Load initial data
+    loadAllAdminData();
+}
+
+// Google Sign-In
+el.googleSignInBtn.addEventListener('click', async () => {
+    try {
+        el.authErrorMsg.style.display = 'none';
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await signInWithPopup(auth, provider);
+    } catch (err) {
+        console.error("Google Sign-In Error:", err);
+        el.authErrorMsg.textContent = `Authentication failed: ${err.message}`;
+        el.authErrorMsg.style.display = 'block';
+    }
+});
+
+// Sign-Out
+function handleSignOut() {
+    signOut(auth).then(() => {
+        state.user = null;
+        showToast("Signed out successfully", "info");
+    }).catch(err => {
+        showToast(`Sign out error: ${err.message}`, "error");
+    });
+}
+el.signOutBtn.addEventListener('click', handleSignOut);
+el.unauthorizedSignOutBtn.addEventListener('click', handleSignOut);
+
+// Auth state observer
+onAuthStateChanged(auth, user => {
+    checkAdminAuth(user);
+});
+
+// =============================================================================
+// TAB NAVIGATION
+// =============================================================================
+el.navTabs.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        switchTab(tab);
+    });
+});
+
+function switchTab(tabName) {
+    state.currentTab = tabName;
+    el.navTabs.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+    el.tabSections.forEach(sec => {
+        sec.classList.toggle('active', sec.id === `tab-${tabName}`);
+    });
+}
+
+// =============================================================================
+// LOAD ALL DATA
+// =============================================================================
+async function loadAllAdminData() {
+    await Promise.all([
+        fetchProducts(),
+        fetchOrders(),
+        fetchConsultations()
+    ]);
+}
+
+// =============================================================================
+// TAB 1: PRODUCTS (Catalog Manager)
+// =============================================================================
+
+async function fetchProducts() {
+    el.productsLoadingSpinner.style.display = 'flex';
+    el.productsEmptyState.style.display = 'none';
+    el.productsGrid.innerHTML = '';
+
+    try {
+        const querySnapshot = await getDocs(collection(db, "products"));
+        const items = [];
+        querySnapshot.forEach(docSnap => {
+            items.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        state.products = items;
+        el.productsCountBadge.textContent = items.length;
+        renderProductsGrid();
+    } catch (err) {
+        console.error("Error fetching products:", err);
+        showToast(`Could not load products: ${err.message}`, "error");
+    } finally {
+        el.productsLoadingSpinner.style.display = 'none';
+    }
+}
+
+function renderProductsGrid() {
+    const queryStr = state.productSearchQuery.toLowerCase().trim();
+    const cat = state.productFilterCategory;
+
+    const filtered = state.products.filter(p => {
+        const matchesCategory = (cat === 'ALL') || (p.category && p.category.toUpperCase() === cat);
+        const matchesSearch = !queryStr ||
+            (p.fullName && p.fullName.toLowerCase().includes(queryStr)) ||
+            (p.editorialTitle && p.editorialTitle.toLowerCase().includes(queryStr)) ||
+            (p.id && p.id.toLowerCase().includes(queryStr));
+        return matchesCategory && matchesSearch;
+    });
+
+    if (filtered.length === 0) {
+        el.productsEmptyState.style.display = 'block';
+        el.productsGrid.innerHTML = '';
+        return;
+    }
+
+    el.productsEmptyState.style.display = 'none';
+    el.productsGrid.innerHTML = filtered.map(prod => {
+        const firstVariant = (prod.variants && prod.variants[0]) || {};
+        const thumbnail = prod.imageUrl || firstVariant.imageUrl || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80';
+        const variantsList = prod.variants || [];
+        const formattedPrice = Number(prod.priceInr || 0).toLocaleString('en-IN');
+
+        const variantDots = variantsList.map(v => {
+            const swatch = v.swatchHex || '#1A1A1A';
+            return `<span class="variant-dot" style="background-color: ${swatch};" title="${v.colorName || 'Variant'}"></span>`;
+        }).join('');
+
+        return `
+            <div class="product-admin-card" data-product-id="${prod.id}">
+                <div class="card-image-wrap">
+                    <img src="${thumbnail}" alt="${prod.fullName || prod.id}" class="card-product-img" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80'">
+                    <span class="card-category-badge">${prod.category || 'HEIRLOOM'}</span>
+                    <span class="card-price-badge">₹${formattedPrice}</span>
+                </div>
+                <div class="card-body">
+                    <span class="card-editorial-title">${prod.editorialTitle || ''}</span>
+                    <h4 class="card-full-name">${prod.fullName || prod.id}</h4>
+                    <div class="card-variants-row">
+                        ${variantDots}
+                        <span class="variant-count-text">${variantsList.length} color${variantsList.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div class="card-actions-bar">
+                        <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit Heilloom</button>
+                        <button class="btn-card-action danger delete-prod-btn" data-id="${prod.id}">✕ Delete</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach card action listeners
+    el.productsGrid.querySelectorAll('.edit-prod-btn').forEach(btn => {
+        btn.addEventListener('click', () => editProduct(btn.dataset.id));
+    });
+    el.productsGrid.querySelectorAll('.delete-prod-btn').forEach(btn => {
+        btn.addEventListener('click', () => confirmDeleteProduct(btn.dataset.id));
+    });
+}
+
+// Product search and filter listeners
+el.productSearchInput.addEventListener('input', e => {
+    state.productSearchQuery = e.target.value;
+    renderProductsGrid();
+});
+
+el.productCategoryFilters.querySelectorAll('.filter-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        el.productCategoryFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        state.productFilterCategory = pill.dataset.category;
+        renderProductsGrid();
+    });
+});
+
+// Toggle Add/Edit Product Panel
+function openProductForm(isEditing = false) {
+    el.productFormPanel.style.display = 'block';
+    el.formPanelTitle.textContent = isEditing ? `Edit Heilloom (${state.editingProductId})` : 'Create New Heilloom Piece';
+    el.toggleProductFormText.textContent = 'Close Editor';
+    el.productFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeProductForm() {
+    el.productFormPanel.style.display = 'none';
+    el.toggleProductFormText.textContent = 'New Product';
+    state.editingProductId = null;
+    el.productEditForm.reset();
+    document.getElementById('prodId').disabled = false;
+    el.variantsContainer.innerHTML = '';
+}
+
+el.toggleProductFormBtn.addEventListener('click', () => {
+    if (el.productFormPanel.style.display === 'none') {
+        initNewProductForm();
+        openProductForm(false);
+    } else {
+        closeProductForm();
+    }
+});
+
+el.closeProductFormBtn.addEventListener('click', closeProductForm);
+el.cancelFormBtn.addEventListener('click', closeProductForm);
+
+// Auto-slugify product ID on new product input
+document.getElementById('prodEditorialTitle').addEventListener('input', e => {
+    if (!state.editingProductId) {
+        const idInput = document.getElementById('prodId');
+        if (!idInput.value || idInput.dataset.autoSlugified === 'true') {
+            const slug = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            if (slug) {
+                idInput.value = `${slug}-${Date.now().toString().slice(-4)}`;
+                idInput.dataset.autoSlugified = 'true';
+            }
+        }
+    }
+});
+
+// Dynamic Variants Builder
+function createVariantCard(variantData = {}) {
+    state.variantCounter++;
+    const vId = variantData.id || `var-${state.variantCounter}`;
+    const colorName = variantData.colorName || 'Royal Burgundy';
+    const swatchHex = variantData.swatchHex || '#800020';
+    const canvasHex = variantData.canvasHex || '#4A0E17';
+    const inStock = variantData.inStock !== false;
+    const imageUrl = variantData.imageUrl || '';
+
+    const card = document.createElement('div');
+    card.className = 'variant-card';
+    card.dataset.variantId = vId;
+
+    card.innerHTML = `
+        <div class="variant-card-top">
+            <span class="variant-index-badge">VARIANT • ${vId.toUpperCase()}</span>
+            <button type="button" class="btn-remove-variant">✕ Remove Variant</button>
+        </div>
+        <div class="variant-grid">
+            <div class="form-field-group">
+                <label>Color Name *</label>
+                <input type="text" class="form-input variant-color-name" value="${colorName}" placeholder="e.g. Royal Burgundy" required>
+            </div>
+            <div class="form-field-group">
+                <label>Swatch Hex</label>
+                <div class="color-picker-group">
+                    <input type="color" class="native-color-input variant-swatch-input" value="${swatchHex}">
+                    <span class="color-hex-text variant-swatch-hex">${swatchHex}</span>
+                </div>
+            </div>
+            <div class="form-field-group">
+                <label>Canvas Tint Hex</label>
+                <div class="color-picker-group">
+                    <input type="color" class="native-color-input variant-canvas-input" value="${canvasHex}">
+                    <span class="color-hex-text variant-canvas-hex">${canvasHex}</span>
+                </div>
+            </div>
+            <div class="form-field-group" style="padding-bottom: 8px;">
+                <label class="checkbox-label">
+                    <input type="checkbox" class="variant-instock-check" ${inStock ? 'checked' : ''}>
+                    <span>In Stock</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="variant-photo-section">
+            <div class="variant-thumbnail-preview">
+                ${imageUrl ? `<img src="${imageUrl}" class="thumb-img" alt="Preview">` : `<span class="empty-thumb">📷</span>`}
+            </div>
+            <div class="variant-photo-inputs">
+                <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Upload Photo to Firebase Storage</label>
+                <input type="file" class="file-input-custom variant-file-input" accept="image/*">
+                <input type="url" class="form-input variant-url-input" value="${imageUrl}" placeholder="Or keep/paste photo URL...">
+            </div>
+        </div>
+    `;
+
+    // Color picker change listeners
+    const swatchInput = card.querySelector('.variant-swatch-input');
+    const swatchHexSpan = card.querySelector('.variant-swatch-hex');
+    swatchInput.addEventListener('input', e => {
+        swatchHexSpan.textContent = e.target.value.toUpperCase();
+    });
+
+    const canvasInput = card.querySelector('.variant-canvas-input');
+    const canvasHexSpan = card.querySelector('.variant-canvas-hex');
+    canvasInput.addEventListener('input', e => {
+        canvasHexSpan.textContent = e.target.value.toUpperCase();
+    });
+
+    // File input thumbnail preview
+    const fileInput = card.querySelector('.variant-file-input');
+    const thumbWrap = card.querySelector('.variant-thumbnail-preview');
+    fileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) {
+            const previewUrl = URL.createObjectURL(file);
+            thumbWrap.innerHTML = `<img src="${previewUrl}" class="thumb-img" alt="Preview">`;
+        }
+    });
+
+    // Remove variant button
+    card.querySelector('.btn-remove-variant').addEventListener('click', () => {
+        if (el.variantsContainer.querySelectorAll('.variant-card').length <= 1) {
+            showToast("Each product requires at least 1 color variant", "error");
+            return;
+        }
+        card.remove();
+    });
+
+    el.variantsContainer.appendChild(card);
+}
+
+el.addVariantBtn.addEventListener('click', () => {
+    createVariantCard({
+        id: `var-${Date.now().toString().slice(-4)}`,
+        colorName: 'Midnight Emerald',
+        swatchHex: '#0D3822',
+        canvasHex: '#082114',
+        inStock: true
+    });
+});
+
+function initNewProductForm() {
+    state.editingProductId = null;
+    el.productEditForm.reset();
+    document.getElementById('prodId').disabled = false;
+    document.getElementById('prodId').dataset.autoSlugified = 'false';
+    el.variantsContainer.innerHTML = '';
+    // Default first variant
+    createVariantCard({
+        id: 'var-1',
+        colorName: 'Royal Burgundy',
+        swatchHex: '#800020',
+        canvasHex: '#4A0E17',
+        inStock: true
+    });
+}
+
+function editProduct(productId) {
+    const prod = state.products.find(p => p.id === productId);
+    if (!prod) return;
+
+    state.editingProductId = productId;
+    openProductForm(true);
+
+    const idInput = document.getElementById('prodId');
+    idInput.value = prod.id;
+    idInput.disabled = true;
+
+    document.getElementById('prodEditorialTitle').value = prod.editorialTitle || '';
+    document.getElementById('prodFullName').value = prod.fullName || '';
+    document.getElementById('prodCategory').value = prod.category || 'SAREES';
+    document.getElementById('prodPriceInr').value = prod.priceInr || '';
+    document.getElementById('prodAvailableOptions').value = Array.isArray(prod.availableOptions) ? prod.availableOptions.join(', ') : (prod.availableOptions || '');
+    document.getElementById('prodTopLeftSpec').value = prod.topLeftSpec || '';
+    document.getElementById('prodTopRightSpec').value = prod.topRightSpec || '';
+    document.getElementById('prodTrustBadge').value = prod.trustBadgeText || '';
+    document.getElementById('prodDescription').value = prod.description || '';
+    document.getElementById('prodDetails').value = prod.details || '';
+    document.getElementById('prodCareInstructions').value = prod.careInstructions || '';
+
+    el.variantsContainer.innerHTML = '';
+    const variants = (prod.variants && prod.variants.length > 0) ? prod.variants : [{
+        id: 'var-1',
+        colorName: 'Standard',
+        swatchHex: '#800020',
+        canvasHex: '#4A0E17',
+        imageUrl: prod.imageUrl || '',
+        inStock: true
+    }];
+
+    variants.forEach(v => createVariantCard(v));
+}
+
+// Delete Product Confirmation
+function confirmDeleteProduct(productId) {
+    const prod = state.products.find(p => p.id === productId);
+    const title = prod ? prod.fullName : productId;
+    showConfirmModal(
+        "Delete Heilloom Product",
+        `Are you sure you want to permanently delete "${title}" (${productId}) from the Artpoure catalog? This action cannot be reversed.`,
+        async () => {
+            try {
+                await deleteDoc(doc(db, "products", productId));
+                showToast(`Deleted ${productId} successfully`, "success");
+                await fetchProducts();
+            } catch (err) {
+                console.error("Error deleting product:", err);
+                showToast(`Failed to delete product: ${err.message}`, "error");
+            }
+        }
+    );
+}
+
+// Form Submission: Uploads to Firebase Storage + Writes to Firestore
+el.productEditForm.addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const prodId = document.getElementById('prodId').value.trim();
+    const editorialTitle = document.getElementById('prodEditorialTitle').value.trim();
+    const fullName = document.getElementById('prodFullName').value.trim();
+    const category = document.getElementById('prodCategory').value.trim();
+    const priceInr = Number(document.getElementById('prodPriceInr').value);
+    const availableOptionsRaw = document.getElementById('prodAvailableOptions').value.trim();
+    const topLeftSpec = document.getElementById('prodTopLeftSpec').value.trim();
+    const topRightSpec = document.getElementById('prodTopRightSpec').value.trim();
+    const trustBadgeText = document.getElementById('prodTrustBadge').value.trim();
+    const description = document.getElementById('prodDescription').value.trim();
+    const details = document.getElementById('prodDetails').value.trim();
+    const careInstructions = document.getElementById('prodCareInstructions').value.trim();
+
+    if (!prodId || !fullName || !priceInr || priceInr <= 0) {
+        showToast("Please fill in valid Product ID, Title, and Price.", "error");
+        return;
+    }
+
+    const variantCards = Array.from(el.variantsContainer.querySelectorAll('.variant-card'));
+    if (variantCards.length === 0) {
+        showToast("Please add at least 1 color variant.", "error");
+        return;
+    }
+
+    // Lock Form
+    el.saveProductBtn.disabled = true;
+    el.formProgressFeedback.style.display = 'flex';
+    el.formProgressMessage.textContent = "Processing product & photos...";
+
+    try {
+        const variantsData = [];
+
+        for (let i = 0; i < variantCards.length; i++) {
+            const card = variantCards[i];
+            const vId = card.dataset.variantId || `var-${i + 1}`;
+            const colorName = card.querySelector('.variant-color-name').value.trim();
+            const swatchHex = card.querySelector('.variant-swatch-input').value;
+            const canvasHex = card.querySelector('.variant-canvas-input').value;
+            const inStock = card.querySelector('.variant-instock-check').checked;
+            const fileInput = card.querySelector('.variant-file-input');
+            const urlInput = card.querySelector('.variant-url-input');
+
+            let imageUrl = urlInput.value.trim();
+
+            // If a new file is chosen, upload to Firebase Storage
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                el.formProgressMessage.textContent = `Uploading photo for variant "${colorName}" (${i + 1}/${variantCards.length})...`;
+                const fileExt = file.name.split('.').pop() || 'jpg';
+                const storagePath = `products/${prodId}/${vId}_${Date.now()}.${fileExt}`;
+                const storageRef = ref(storage, storagePath);
+                const snapshot = await uploadBytes(storageRef, file);
+                imageUrl = await getDownloadURL(snapshot.ref);
+            }
+
+            if (!imageUrl) {
+                throw new Error(`Variant "${colorName}" requires a photo file upload or image URL.`);
+            }
+
+            variantsData.push({
+                id: vId,
+                colorName: colorName || `Color ${i + 1}`,
+                swatchHex: swatchHex,
+                canvasHex: canvasHex,
+                imageUrl: imageUrl,
+                images: [imageUrl],
+                inStock: inStock
+            });
+        }
+
+        el.formProgressMessage.textContent = "Saving product document in Firestore...";
+
+        const availableOptions = availableOptionsRaw
+            ? availableOptionsRaw.split(',').map(s => s.trim()).filter(Boolean)
+            : ['Free Size'];
+
+        const productDoc = {
+            id: prodId,
+            editorialTitle: editorialTitle.toUpperCase(),
+            fullName: fullName,
+            category: category,
+            priceInr: priceInr,
+            availableOptions: availableOptions,
+            topLeftSpec: topLeftSpec,
+            topRightSpec: topRightSpec,
+            trustBadgeText: trustBadgeText,
+            description: description,
+            details: details,
+            careInstructions: careInstructions,
+            imageUrl: variantsData[0].imageUrl,
+            variants: variantsData,
+            updatedAt: serverTimestamp()
+        };
+
+        // Write to Firestore products collection
+        await setDoc(doc(db, "products", prodId), productDoc, { merge: true });
+
+        showToast(`Heilloom "${fullName}" saved successfully!`, "success");
+        closeProductForm();
+        await fetchProducts();
+
+    } catch (err) {
+        console.error("Save Product Error:", err);
+        showToast(`Error saving product: ${err.message}`, "error");
+    } finally {
+        el.saveProductBtn.disabled = false;
+        el.formProgressFeedback.style.display = 'none';
+    }
+});
+
+// =============================================================================
+// TAB 2: ORDERS (Fulfillment & Tracking)
+// =============================================================================
+
+async function fetchOrders() {
+    el.ordersLoadingSpinner.style.display = 'flex';
+    el.ordersEmptyState.style.display = 'none';
+    el.ordersList.innerHTML = '';
+
+    try {
+        let querySnapshot;
+        try {
+            querySnapshot = await getDocs(query(collection(db, "orders"), orderBy("createdAt", "desc")));
+        } catch (idxErr) {
+            console.warn("Index warning, falling back to unordered fetch:", idxErr);
+            querySnapshot = await getDocs(collection(db, "orders"));
+        }
+
+        const items = [];
+        querySnapshot.forEach(docSnap => {
+            items.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        // Fallback in-memory sort by date descending
+        items.sort((a, b) => {
+            const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+            const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+            return timeB - timeA;
+        });
+
+        state.orders = items;
+        el.ordersCountBadge.textContent = items.length;
+        renderOrdersList();
+    } catch (err) {
+        console.error("Error fetching orders:", err);
+        showToast(`Could not load orders: ${err.message}`, "error");
+    } finally {
+        el.ordersLoadingSpinner.style.display = 'none';
+    }
+}
+
+function renderOrdersList() {
+    const queryStr = state.orderSearchQuery.toLowerCase().trim();
+    const filterStatus = state.orderFilterStatus;
+
+    const filtered = state.orders.filter(ord => {
+        const status = (ord.status || 'PENDING').toUpperCase();
+        const payStatus = (ord.paymentStatus || '').toUpperCase();
+        const payMethod = (ord.paymentMethod || '').toUpperCase();
+
+        let matchesFilter = false;
+        if (filterStatus === 'ALL') matchesFilter = true;
+        else if (filterStatus === 'PAID') matchesFilter = payStatus === 'PAID';
+        else if (filterStatus === 'PENDING') matchesFilter = payStatus.includes('PENDING') || status === 'PENDING';
+        else if (filterStatus === 'COD') matchesFilter = payMethod === 'COD';
+        else if (filterStatus === 'SHIPPED') matchesFilter = status === 'SHIPPED';
+        else if (filterStatus === 'DELIVERED') matchesFilter = status === 'DELIVERED';
+
+        const matchesSearch = !queryStr ||
+            (ord.id && ord.id.toLowerCase().includes(queryStr)) ||
+            (ord.shippingAddress?.receiverName && ord.shippingAddress.receiverName.toLowerCase().includes(queryStr)) ||
+            (ord.shippingAddress?.receiverPhone && ord.shippingAddress.receiverPhone.includes(queryStr));
+
+        return matchesFilter && matchesSearch;
+    });
+
+    if (filtered.length === 0) {
+        el.ordersEmptyState.style.display = 'block';
+        el.ordersList.innerHTML = '';
+        return;
+    }
+
+    el.ordersEmptyState.style.display = 'none';
+    el.ordersList.innerHTML = filtered.map(ord => {
+        const orderId = ord.orderId || ord.id;
+        const dateStr = ord.createdAt?.seconds
+            ? new Date(ord.createdAt.seconds * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : (ord.createdAt ? new Date(ord.createdAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Recent');
+
+        const addr = ord.shippingAddress || {};
+        const fullAddr = [addr.houseFlat, addr.floor, addr.street, addr.area, addr.city, addr.pinCode].filter(Boolean).join(', ');
+
+        const pricing = ord.pricing || {};
+        const grandTotal = pricing.grandTotalInr || ord.grandTotalInr || 0;
+        const formattedTotal = Number(grandTotal).toLocaleString('en-IN');
+
+        const payMethod = ord.paymentMethod || 'RAZORPAY';
+        const payStatus = ord.paymentStatus || 'PENDING';
+        const fulfillmentStatus = ord.status || 'CONFIRMED';
+        const trackingNum = ord.trackingNumber || '';
+        const courier = ord.courierName || '';
+
+        const itemsList = ord.items || [];
+        const itemsRows = itemsList.map(item => {
+            const title = item.fullName || item.title || item.productId || 'Heilloom';
+            const color = item.colorName || item.variantId || 'Standard';
+            const qty = item.quantity || 1;
+            const price = Number(item.unitPriceInr || item.priceInr || 0).toLocaleString('en-IN');
+            return `
+                <tr>
+                    <td><strong>${title}</strong><br><small style="color: var(--gold);">${color}</small></td>
+                    <td>${qty}</td>
+                    <td>₹${price}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const payStatusClass = payStatus === 'PAID' ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending');
+        const fulfillStatusClass = fulfillmentStatus.toLowerCase();
+
+        return `
+            <div class="order-card" data-order-id="${ord.id}">
+                <div class="order-card-header">
+                    <div class="order-id-wrap">
+                        <span class="order-id-badge">${orderId}</span>
+                        <span class="order-date-text">• ${dateStr}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <span class="status-badge ${payStatusClass}">${payMethod}: ${payStatus}</span>
+                        <span class="status-badge ${fulfillStatusClass}">${fulfillmentStatus}</span>
+                    </div>
+                </div>
+
+                <div class="order-card-grid">
+                    <div class="order-info-column">
+                        <span class="order-info-label">Customer</span>
+                        <span class="order-info-value"><strong>${addr.receiverName || 'Guest Client'}</strong></span>
+                        <span class="order-info-value"><a href="tel:${addr.receiverPhone || ''}">📞 ${addr.receiverPhone || 'No Phone'}</a></span>
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Shipping Destination</span>
+                        <span class="order-info-value">${fullAddr || 'No address details'}</span>
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Payment & Grand Total</span>
+                        <span class="order-info-value" style="font-size: 16px; font-weight: 700; color: var(--gold);">₹${formattedTotal}</span>
+                        <span class="order-info-value" style="font-size: 11px; color: var(--text-muted);">${ord.razorpayPaymentId ? `Razorpay ID: ${ord.razorpayPaymentId}` : payMethod}</span>
+                    </div>
+                </div>
+
+                <!-- Itemized Products Table -->
+                <table class="order-items-table">
+                    <thead>
+                        <tr>
+                            <th>Item & Variant</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsRows}
+                    </tbody>
+                </table>
+
+                <!-- Inline Fulfillment Manager -->
+                <div class="order-fulfillment-box">
+                    <label style="font-size: 11px; font-weight: 600; color: var(--gold);">FULFILLMENT:</label>
+                    <select class="fulfillment-select order-status-select" data-id="${ord.id}">
+                        <option value="CONFIRMED" ${fulfillmentStatus === 'CONFIRMED' ? 'selected' : ''}>CONFIRMED</option>
+                        <option value="PACKED" ${fulfillmentStatus === 'PACKED' ? 'selected' : ''}>PACKED</option>
+                        <option value="SHIPPED" ${fulfillmentStatus === 'SHIPPED' ? 'selected' : ''}>SHIPPED</option>
+                        <option value="DELIVERED" ${fulfillmentStatus === 'DELIVERED' ? 'selected' : ''}>DELIVERED</option>
+                        <option value="CANCELLED" ${fulfillmentStatus === 'CANCELLED' ? 'selected' : ''}>CANCELLED</option>
+                    </select>
+
+                    <input type="text" class="fulfillment-input order-courier-input" placeholder="Courier (e.g. BlueDart / Delhivery)" value="${courier}" data-id="${ord.id}">
+                    <input type="text" class="fulfillment-input order-tracking-input" placeholder="AWB / Tracking Number" value="${trackingNum}" data-id="${ord.id}">
+
+                    <button class="btn-primary-action btn-sm save-fulfillment-btn" data-id="${ord.id}">
+                        <span>Save Update</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach fulfillment save listeners
+    el.ordersList.querySelectorAll('.save-fulfillment-btn').forEach(btn => {
+        btn.addEventListener('click', () => saveOrderFulfillment(btn.dataset.id));
+    });
+}
+
+// Order fulfillment updates
+async function saveOrderFulfillment(docId) {
+    const card = el.ordersList.querySelector(`.order-card[data-order-id="${docId}"]`);
+    if (!card) return;
+
+    const statusSelect = card.querySelector('.order-status-select');
+    const courierInput = card.querySelector('.order-courier-input');
+    const trackingInput = card.querySelector('.order-tracking-input');
+    const saveBtn = card.querySelector('.save-fulfillment-btn');
+
+    const newStatus = statusSelect.value;
+    const courierVal = courierInput.value.trim();
+    const trackingVal = trackingInput.value.trim();
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+        await updateDoc(doc(db, "orders", docId), {
+            status: newStatus,
+            courierName: courierVal,
+            trackingNumber: trackingVal,
+            updatedAt: serverTimestamp()
+        });
+
+        showToast(`Order ${docId} updated to ${newStatus}`, "success");
+        await fetchOrders();
+    } catch (err) {
+        console.error("Order fulfillment update error:", err);
+        showToast(`Failed to update order: ${err.message}`, "error");
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Update';
+    }
+}
+
+el.refreshOrdersBtn.addEventListener('click', fetchOrders);
+
+el.orderSearchInput.addEventListener('input', e => {
+    state.orderSearchQuery = e.target.value;
+    renderOrdersList();
+});
+
+el.orderStatusFilters.querySelectorAll('.filter-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        el.orderStatusFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        state.orderFilterStatus = pill.dataset.status;
+        renderOrdersList();
+    });
+});
+
+// =============================================================================
+// TAB 3: CONSULTATIONS (Atelier Appointments)
+// =============================================================================
+
+async function fetchConsultations() {
+    el.consultationsLoadingSpinner.style.display = 'flex';
+    el.consultationsEmptyState.style.display = 'none';
+    el.consultationsList.innerHTML = '';
+
+    try {
+        let querySnapshot;
+        try {
+            querySnapshot = await getDocs(query(collection(db, "appointments"), orderBy("bookedAt", "desc")));
+        } catch (idxErr) {
+            console.warn("Index warning, falling back to unordered fetch:", idxErr);
+            querySnapshot = await getDocs(collection(db, "appointments"));
+        }
+
+        const items = [];
+        querySnapshot.forEach(docSnap => {
+            items.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        items.sort((a, b) => {
+            const timeA = a.bookedAt ? new Date(a.bookedAt).getTime() : 0;
+            const timeB = b.bookedAt ? new Date(b.bookedAt).getTime() : 0;
+            return timeB - timeA;
+        });
+
+        state.appointments = items;
+        el.consultationsCountBadge.textContent = items.length;
+        renderConsultationsList();
+    } catch (err) {
+        console.error("Error fetching consultations:", err);
+        showToast(`Could not load consultations: ${err.message}`, "error");
+    } finally {
+        el.consultationsLoadingSpinner.style.display = 'none';
+    }
+}
+
+function renderConsultationsList() {
+    const queryStr = state.consultationSearchQuery.toLowerCase().trim();
+    const filterStatus = state.consultationFilterStatus;
+
+    const filtered = state.appointments.filter(apt => {
+        const status = (apt.status || 'CONFIRMED').toUpperCase();
+        const matchesFilter = (filterStatus === 'ALL') || (status === filterStatus);
+        const matchesSearch = !queryStr ||
+            (apt.clientName && apt.clientName.toLowerCase().includes(queryStr)) ||
+            (apt.clientPhone && apt.clientPhone.includes(queryStr)) ||
+            (apt.preferredWeave && apt.preferredWeave.toLowerCase().includes(queryStr));
+        return matchesFilter && matchesSearch;
+    });
+
+    if (filtered.length === 0) {
+        el.consultationsEmptyState.style.display = 'block';
+        el.consultationsList.innerHTML = '';
+        return;
+    }
+
+    el.consultationsEmptyState.style.display = 'none';
+    el.consultationsList.innerHTML = filtered.map(apt => {
+        const aptId = apt.id;
+        const status = apt.status || 'CONFIRMED';
+        const dateStr = apt.bookedAt ? new Date(apt.bookedAt).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : 'Recent';
+        const statusClass = status.toLowerCase();
+
+        return `
+            <div class="consultation-card" data-apt-id="${aptId}">
+                <div class="consultation-card-header">
+                    <h4 class="client-name">${apt.clientName || 'Bespoke Client'}</h4>
+                    <span class="status-badge ${statusClass}">${status}</span>
+                </div>
+
+                <div class="consultation-detail-row">
+                    <span class="consultation-detail-label">Client Phone</span>
+                    <span class="consultation-detail-value"><a href="tel:${apt.clientPhone || ''}">📞 ${apt.clientPhone || 'No Phone'}</a></span>
+                </div>
+
+                <div class="consultation-detail-row">
+                    <span class="consultation-detail-label">Preferred Appointment Date</span>
+                    <span class="consultation-detail-value" style="color: var(--gold); font-weight: 600;">📅 ${apt.preferredDate || 'Not specified'}</span>
+                </div>
+
+                <div class="consultation-detail-row">
+                    <span class="consultation-detail-label">Preferred Weave / Silhouette</span>
+                    <span class="consultation-detail-value">${apt.preferredWeave || 'General Haute Couture Consultation'}</span>
+                </div>
+
+                <div class="consultation-detail-row">
+                    <span class="consultation-detail-label">Booked On</span>
+                    <span class="consultation-detail-value" style="font-size: 11px; color: var(--text-muted);">${dateStr}</span>
+                </div>
+
+                <div class="consultation-actions">
+                    ${status !== 'COMPLETED' ? `<button class="btn-card-action complete-apt-btn" data-id="${aptId}">✓ Complete</button>` : ''}
+                    ${status !== 'CANCELLED' ? `<button class="btn-card-action danger cancel-apt-btn" data-id="${aptId}">✕ Cancel</button>` : ''}
+                    <button class="btn-card-action danger delete-apt-btn" data-id="${aptId}">🗑 Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach consultation action listeners
+    el.consultationsList.querySelectorAll('.complete-apt-btn').forEach(btn => {
+        btn.addEventListener('click', () => updateAppointmentStatus(btn.dataset.id, 'COMPLETED'));
+    });
+    el.consultationsList.querySelectorAll('.cancel-apt-btn').forEach(btn => {
+        btn.addEventListener('click', () => updateAppointmentStatus(btn.dataset.id, 'CANCELLED'));
+    });
+    el.consultationsList.querySelectorAll('.delete-apt-btn').forEach(btn => {
+        btn.addEventListener('click', () => confirmDeleteAppointment(btn.dataset.id));
+    });
+}
+
+async function updateAppointmentStatus(aptId, newStatus) {
+    try {
+        await updateDoc(doc(db, "appointments", aptId), {
+            status: newStatus,
+            updatedAt: serverTimestamp()
+        });
+        showToast(`Consultation marked as ${newStatus}`, "success");
+        await fetchConsultations();
+    } catch (err) {
+        console.error("Consultation update error:", err);
+        showToast(`Failed to update consultation: ${err.message}`, "error");
+    }
+}
+
+function confirmDeleteAppointment(aptId) {
+    showConfirmModal(
+        "Delete Consultation",
+        `Are you sure you want to permanently delete appointment ${aptId}?`,
+        async () => {
+            try {
+                await deleteDoc(doc(db, "appointments", aptId));
+                showToast(`Consultation ${aptId} deleted`, "success");
+                await fetchConsultations();
+            } catch (err) {
+                console.error("Error deleting consultation:", err);
+                showToast(`Failed to delete consultation: ${err.message}`, "error");
+            }
+        }
+    );
+}
+
+el.refreshConsultationsBtn.addEventListener('click', fetchConsultations);
+
+el.consultationSearchInput.addEventListener('input', e => {
+    state.consultationSearchQuery = e.target.value;
+    renderConsultationsList();
+});
+
+el.consultationStatusFilters.querySelectorAll('.filter-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+        el.consultationStatusFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        state.consultationFilterStatus = pill.dataset.status;
+        renderConsultationsList();
+    });
+});
