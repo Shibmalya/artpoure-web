@@ -2432,6 +2432,19 @@ function updateEditorialPageContent() {
         cartBadge.style.display = totalCart > 0 ? 'flex' : 'none';
     }
 
+    // Consultation Action Button: Strictly visible ONLY on ArtClusive & Bespoke sarees
+    const consultBtn = document.getElementById('editorialConsultBtn');
+    if (consultBtn) {
+        const isArtClusive = product.category === 'CUSTOM' ||
+            product.category === 'HAND_PRINTED' ||
+            product.category === 'HAND_PAINTED' ||
+            (product.fullName && (product.fullName.toLowerCase().includes('hand-paint') || product.fullName.toLowerCase().includes('hand-print') || product.fullName.toLowerCase().includes('handcrafted') || product.fullName.toLowerCase().includes('bespoke'))) ||
+            (product.editorialTitle && (product.editorialTitle.toLowerCase().includes('hand') || product.editorialTitle.toLowerCase().includes('bespoke'))) ||
+            (product.description && (product.description.toLowerCase().includes('hand-painted') || product.description.toLowerCase().includes('hand-printed') || product.description.toLowerCase().includes('bespoke'))) ||
+            (product.topLeftSpec && (product.topLeftSpec.toLowerCase().includes('haute') || product.topLeftSpec.toLowerCase().includes('bespoke')));
+        consultBtn.style.display = isArtClusive ? 'flex' : 'none';
+    }
+
     // Multi-angle variant gallery dots
     const images = (variant.allImages && variant.allImages.length > 0) ? variant.allImages : [variant.imageUrl || product.imageUrl];
     if (dots) {
