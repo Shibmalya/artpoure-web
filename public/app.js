@@ -60,9 +60,44 @@ const FALLBACK_PRODUCTS = [
         details: "100% Pure Silk • Kadwa Weave • Dry Clean Only • 6.5m with blouse",
         imageUrl: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80",
         variants: [
-            { id: "var-1a", colorName: "Royal Burgundy", swatchHex: "#800020", canvasHex: "#4A0E17", imageUrl: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80", inStock: true },
-            { id: "var-1b", colorName: "Midnight Emerald", swatchHex: "#0D3822", canvasHex: "#082114", imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80", inStock: true },
-            { id: "var-1c", colorName: "Obsidian Charcoal", swatchHex: "#1A1A1A", canvasHex: "#101010", imageUrl: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=800&q=80", inStock: true }
+            {
+                id: "var-1a",
+                colorName: "Royal Burgundy",
+                swatchHex: "#800020",
+                canvasHex: "#4A0E17",
+                imageUrl: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80",
+                images: [
+                    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1000&q=85",
+                    "https://images.unsplash.com/photo-1609357605129-26f69add5d6e?auto=format&fit=crop&w=1000&q=85",
+                    "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1000&q=85"
+                ],
+                inStock: true
+            },
+            {
+                id: "var-1b",
+                colorName: "Midnight Emerald",
+                swatchHex: "#0D3822",
+                canvasHex: "#082114",
+                imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80",
+                images: [
+                    "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=1000&q=85",
+                    "https://images.unsplash.com/photo-1609357605129-26f69add5d6e?auto=format&fit=crop&w=1000&q=85",
+                    "https://images.unsplash.com/photo-1610030469668-932d0c2e92c6?auto=format&fit=crop&w=1000&q=85"
+                ],
+                inStock: true
+            },
+            {
+                id: "var-1c",
+                colorName: "Obsidian Charcoal",
+                swatchHex: "#1A1A1A",
+                canvasHex: "#101010",
+                imageUrl: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=800&q=80",
+                images: [
+                    "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=1000&q=85",
+                    "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1000&q=85"
+                ],
+                inStock: true
+            }
         ]
     },
     {
