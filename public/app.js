@@ -455,6 +455,34 @@ const SUB_CATEGORIES = {
     ]
 };
 
+function getSubCategoryIconSvg(subId) {
+    if (subId.startsWith('all-')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5z"/></svg>`;
+    }
+    if (subId.includes('saree') || subId.includes('dress') || subId.includes('lehenga')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13.94 8.31C13.62 7.52 12.85 7 12 7s-1.62.52-1.94 1.31L7 16h3v6h4v-6h3l-3.06-7.69zM12 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>`;
+    }
+    if (subId.includes('kurta') || subId.includes('clutch') || subId.includes('dupatta')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`;
+    }
+    if (subId.includes('sherwani') || subId.includes('jacket') || subId.includes('nehru')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M14 7h-4c-1.1 0-2 .9-2 2v6h2v7h4v-7h2V9c0-1.1-.9-2-2-2zM12 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>`;
+    }
+    if (subId.includes('kids')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="14.5" cy="10.5" r="1.25"/><circle cx="9.5" cy="10.5" r="1.25"/><path d="M12 17c2.01 0 3.74-1.23 4.5-3h-9c.76 1.77 2.49 3 4.5 3zm10.94-5.66c-.25-1.51-1.36-2.74-2.81-3.17-.53-1.12-1.28-2.1-2.19-2.91C16.36 3.85 14.28 3 12 3s-4.36.85-5.94 2.26c-.92.81-1.67 1.8-2.19 2.91-1.45.43-2.56 1.65-2.81 3.17-.04.21-.06.43-.06.66s.02.45.06.66c.25 1.51 1.36 2.74 2.81 3.17.52 1.11 1.27 2.09 2.17 2.89C7.62 20.14 9.69 21 12 21s4.38-.86 5.96-2.27c.9-.8 1.65-1.78 2.17-2.89 1.45-.43 2.56-1.66 2.81-3.17.04-.21.06-.43.06-.66s-.02-.46-.06-.67z"/></svg>`;
+    }
+    if (subId.includes('top') || subId.includes('shirt') || subId.includes('trouser')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.38 3.46L16 2 12 5.5 8 2l-4.38 1.46a2 2 0 0 0-1.34 1.9V10a2 2 0 0 0 1.2 1.84L6 13v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-8l2.14-1.16A2 2 0 0 0 21.34 10V5.36a2 2 0 0 0-.96-1.9z"/></svg>`;
+    }
+    if (subId.includes('footwear') || subId.includes('jutti') || subId.includes('mojari') || subId.includes('heel') || subId.includes('sandal')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/></svg>`;
+    }
+    if (subId.includes('jewel') || subId.includes('acc')) {
+        return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5L2 9l10 12L22 9l-3-6zM9.62 8l1.5-3h1.76l1.5 3H9.62zM11 10v6.68L5.44 10H11zm2 0h5.56L13 16.68V10z"/></svg>`;
+    }
+    return `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5z"/></svg>`;
+}
+
 function renderSubCategories(category) {
     const list = SUB_CATEGORIES[category] || [];
     const container = document.getElementById('subCategoryChips');
@@ -462,7 +490,8 @@ function renderSubCategories(category) {
 
     container.innerHTML = list.map(sub => {
         const isActive = (state.selectedSubCategory === sub.id) || (!state.selectedSubCategory && sub.id.startsWith('all-'));
-        return `<button class="sub-category-chip ${isActive ? 'active' : ''}" data-subid="${sub.id}">${sub.label}</button>`;
+        const iconSvg = getSubCategoryIconSvg(sub.id);
+        return `<button class="sub-category-chip ${isActive ? 'active' : ''}" data-subid="${sub.id}">${iconSvg}<span>${sub.label}</span></button>`;
     }).join('');
 }
 
