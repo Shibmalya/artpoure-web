@@ -141,13 +141,41 @@ const FALLBACK_PRODUCTS = [
             { id: "var-4a", colorName: "Antique Gold & Emerald", swatchHex: "#8C6D3F", canvasHex: "#3D2E14", imageUrl: "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=800&q=80", inStock: true },
             { id: "var-4b", colorName: "Royal Sapphire Blue", swatchHex: "#0F52BA", canvasHex: "#0A295C", imageUrl: "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=800&q=80", inStock: true }
         ]
+    },
+    {
+        id: "kids-01",
+        editorialTitle: "LEHENGA",
+        fullName: "Handcrafted Banarasi Silk Kids Lehenga Set",
+        category: "KIDS",
+        priceInr: 6499,
+        description: "Festive pure silk brocade lehenga choli set tailored with cotton inner lining for gentle comfort and radiant elegance.",
+        details: "Pure Silk Brocade • 3-Piece Set • Age 4-12",
+        imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80",
+        variants: [
+            { id: "var-k1a", colorName: "Crimson", swatchHex: "#6B1D26", canvasHex: "#6B1D26", imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80", inStock: true },
+            { id: "var-k1b", colorName: "Emerald", swatchHex: "#2E4A3E", canvasHex: "#2E4A3E", imageUrl: "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=800&q=80", inStock: true }
+        ]
+    },
+    {
+        id: "footwear-01",
+        editorialTitle: "MOJARI",
+        fullName: "Royal Zardozi Handcrafted Velvet Mojaris",
+        category: "FOOTWEAR",
+        priceInr: 3999,
+        description: "Hand-stitched pure leather Jodhpuri mojaris with deep velvet upper embroidered in royal gold dabka and zari.",
+        details: "Handmade Leather Sole • Cushioned Insole • Micro Velvet",
+        imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80",
+        variants: [
+            { id: "var-f1a", colorName: "Crimson", swatchHex: "#6B1D26", canvasHex: "#6B1D26", imageUrl: "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?auto=format&fit=crop&w=800&q=80", inStock: true },
+            { id: "var-f1b", colorName: "Antique Gold", swatchHex: "#8C6D3F", canvasHex: "#8C6D3F", imageUrl: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=800&q=80", inStock: true }
+        ]
     }
 ];
 
 // --- APP STATE ---
 const state = {
     products: [],
-    selectedCategory: 'ALL',
+    selectedCategory: 'FOR_YOU',
     searchQuery: '',
     selectedVariants: {}, // productId -> variantIndex
     wishlist: new Set(JSON.parse(localStorage.getItem('artpoure_wishlist') || '[]')),
@@ -382,7 +410,14 @@ async function fetchCatalog() {
 function renderCatalog() {
     const query = state.searchQuery.toLowerCase().trim();
     const filtered = state.products.filter(item => {
-        const matchesCategory = state.selectedCategory === 'ALL' || item.category === state.selectedCategory;
+        const cat = state.selectedCategory;
+        const matchesCategory = (cat === 'FOR_YOU' || cat === 'ALL') ||
+            (cat === 'WOMEN' && (item.category === 'WOMEN' || item.category === 'SAREES' || (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")))) ||
+            (cat === 'MEN' && (item.category === 'MEN' || item.editorialTitle.includes('SHERWANI') || item.fullName.includes("Men's"))) ||
+            (cat === 'KIDS' && (item.category === 'KIDS' || item.fullName.includes('Kids'))) ||
+            (cat === 'FOOTWEAR' && (item.category === 'FOOTWEAR' || item.fullName.includes('Mojari') || item.fullName.includes('Jutti'))) ||
+            (cat === 'ACCESSORIES' && (item.category === 'ACCESSORIES' || item.category === 'JEWELLERY')) ||
+            item.category === cat;
         const matchesSearch = !query ||
             item.fullName.toLowerCase().includes(query) ||
             item.editorialTitle.toLowerCase().includes(query);
