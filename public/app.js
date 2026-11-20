@@ -176,6 +176,8 @@ const FALLBACK_PRODUCTS = [
 const state = {
     products: [],
     selectedCategory: 'FOR_YOU',
+    selectedSubCategory: null,
+    isSubCategoryDrawerExpanded: false,
     userGender: localStorage.getItem('artpoure_gender') || 'WOMEN',
     searchQuery: '',
     selectedVariants: {}, // productId -> variantIndex
@@ -379,6 +381,7 @@ async function init() {
     });
     await fetchCatalog();
     setupHeroShowcase();
+    renderSubCategories(state.selectedCategory);
     renderCatalog();
     renderAppointmentsList();
     renderOrdersList();
@@ -405,6 +408,62 @@ async function fetchCatalog() {
             state.selectedVariants[p.id] = 0;
         }
     });
+}
+
+const SUB_CATEGORIES = {
+    WOMEN: [
+        { id: 'all-women', label: 'All' },
+        { id: 'sarees', label: 'Sarees' },
+        { id: 'kurta-sets', label: 'Kurta sets' },
+        { id: 'dresses', label: 'Dresses' },
+        { id: 'tops-jeans', label: 'Tops and jeans' },
+        { id: 'lehengas', label: 'Lehengas' }
+    ],
+    MEN: [
+        { id: 'all-men', label: 'All' },
+        { id: 'sherwanis', label: 'Sherwanis' },
+        { id: 'men-kurta', label: 'Kurta sets' },
+        { id: 'nehru-jackets', label: 'Nehru Jackets' },
+        { id: 'shirts-trousers', label: 'Shirts & Trousers' },
+        { id: 'mojaris', label: 'Mojaris' }
+    ],
+    KIDS: [
+        { id: 'all-kids', label: 'All' },
+        { id: 'kids-festive', label: 'Festive Sets' },
+        { id: 'kids-kurta', label: 'Kurta Pyjamas' },
+        { id: 'kids-lehenga', label: 'Lehengas' },
+        { id: 'kids-dresses', label: 'Dresses' }
+    ],
+    FOOTWEAR: [
+        { id: 'all-footwear', label: 'All' },
+        { id: 'juttis', label: 'Juttis' },
+        { id: 'mojaris-footwear', label: 'Mojaris' },
+        { id: 'heels', label: 'Heels & Mules' },
+        { id: 'sandals', label: 'Kolhapuris & Sandals' }
+    ],
+    ACCESSORIES: [
+        { id: 'all-accessories', label: 'All' },
+        { id: 'jewellery-acc', label: 'Jewellery' },
+        { id: 'dupattas', label: 'Dupattas & Shawls' },
+        { id: 'clutches', label: 'Clutches & Potlis' }
+    ],
+    FOR_YOU: [
+        { id: 'all-for-you', label: 'All' },
+        { id: 'curated-picks', label: 'Curated Picks' },
+        { id: 'new-arrivals', label: 'New Arrivals' },
+        { id: 'trending', label: 'Trending' }
+    ]
+};
+
+function renderSubCategories(category) {
+    const list = SUB_CATEGORIES[category] || [];
+    const container = document.getElementById('subCategoryChips');
+    if (!container) return;
+
+    container.innerHTML = list.map(sub => {
+        const isActive = (state.selectedSubCategory === sub.id) || (!state.selectedSubCategory && sub.id.startsWith('all-'));
+        return `<button class="sub-category-chip ${isActive ? 'active' : ''}" data-subid="${sub.id}">${sub.label}</button>`;
+    }).join('');
 }
 
 // --- RENDER PRODUCT GRID ---
@@ -445,6 +504,25 @@ function renderCatalog() {
         } else {
             matchesCategory = item.category === cat;
         }
+
+        if (state.selectedSubCategory) {
+            const sub = state.selectedSubCategory;
+            let matchesSub = false;
+            if (sub === 'sarees') matchesSub = item.category === 'SAREES' || item.fullName.toLowerCase().includes('saree');
+            else if (sub === 'kurta-sets') matchesSub = item.fullName.toLowerCase().includes('kurta') || item.fullName.toLowerCase().includes('kurti') || item.editorialTitle.includes('CHIKANKARI');
+            else if (sub === 'dresses') matchesSub = item.fullName.toLowerCase().includes('anarkali') || item.fullName.toLowerCase().includes('dress') || item.fullName.toLowerCase().includes('gown') || item.editorialTitle.includes('ANARKALI');
+            else if (sub === 'tops-jeans') matchesSub = item.fullName.toLowerCase().includes('tunic') || item.fullName.toLowerCase().includes('tops') || item.fullName.toLowerCase().includes('pants') || item.editorialTitle.includes('SEPARATES');
+            else if (sub === 'lehengas' || sub === 'kids-lehenga') matchesSub = item.fullName.toLowerCase().includes('lehenga') || item.editorialTitle.includes('LEHENGA');
+            else if (sub === 'sherwanis') matchesSub = item.editorialTitle.includes('SHERWANI');
+            else if (sub === 'men-kurta') matchesSub = item.fullName.toLowerCase().includes('kurta') || item.editorialTitle.includes('SHERWANI');
+            else if (sub === 'mojaris' || sub === 'mojaris-footwear') matchesSub = item.fullName.toLowerCase().includes('mojari');
+            else if (sub === 'juttis') matchesSub = item.fullName.toLowerCase().includes('jutti');
+            else if (sub === 'jewellery-acc') matchesSub = item.category === 'JEWELLERY';
+            else matchesSub = true;
+
+            if (!matchesSub) return false;
+        }
+
         const matchesSearch = !query ||
             item.fullName.toLowerCase().includes(query) ||
             item.editorialTitle.toLowerCase().includes(query);
@@ -787,10 +865,52 @@ function setupEventListeners() {
     elements.categoryChips.addEventListener('click', (e) => {
         const target = e.target.closest('.category-chip');
         if (!target) return;
-        document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
-        target.classList.add('active');
-        state.selectedCategory = target.dataset.category;
-        renderCatalog();
+        const cat = target.dataset.category;
+        const categoriesLayer = document.getElementById('categoriesLayer');
+
+        if (state.selectedCategory === cat) {
+            // Toggle drawer contraction / expansion
+            state.isSubCategoryDrawerExpanded = !state.isSubCategoryDrawerExpanded;
+            if (categoriesLayer) {
+                categoriesLayer.classList.toggle('drawer-open', state.isSubCategoryDrawerExpanded);
+            }
+        } else {
+            document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
+            target.classList.add('active');
+            state.selectedCategory = cat;
+            state.selectedSubCategory = null;
+            state.isSubCategoryDrawerExpanded = true;
+            if (categoriesLayer) {
+                categoriesLayer.classList.add('drawer-open');
+            }
+            renderSubCategories(cat);
+            renderCatalog();
+        }
+    });
+
+    // Sub-category click handler
+    const subCategoryChips = document.getElementById('subCategoryChips');
+    if (subCategoryChips) {
+        subCategoryChips.addEventListener('click', (e) => {
+            const target = e.target.closest('.sub-category-chip');
+            if (!target) return;
+            const subId = target.dataset.subid;
+            state.selectedSubCategory = subId.startsWith('all-') ? null : subId;
+            document.querySelectorAll('.sub-category-chip').forEach(c => c.classList.remove('active'));
+            target.classList.add('active');
+            renderCatalog();
+        });
+    }
+
+    // Auto-collapse drawer on scrolling down
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 40 && state.isSubCategoryDrawerExpanded) {
+            state.isSubCategoryDrawerExpanded = false;
+            const categoriesLayer = document.getElementById('categoriesLayer');
+            if (categoriesLayer) {
+                categoriesLayer.classList.remove('drawer-open');
+            }
+        }
     });
 
     // Search Toggle
