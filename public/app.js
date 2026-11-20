@@ -176,6 +176,7 @@ const FALLBACK_PRODUCTS = [
 const state = {
     products: [],
     selectedCategory: 'FOR_YOU',
+    userGender: localStorage.getItem('artpoure_gender') || 'WOMEN',
     searchQuery: '',
     selectedVariants: {}, // productId -> variantIndex
     wishlist: new Set(JSON.parse(localStorage.getItem('artpoure_wishlist') || '[]')),
@@ -411,13 +412,39 @@ function renderCatalog() {
     const query = state.searchQuery.toLowerCase().trim();
     const filtered = state.products.filter(item => {
         const cat = state.selectedCategory;
-        const matchesCategory = (cat === 'FOR_YOU' || cat === 'ALL') ||
-            (cat === 'WOMEN' && (item.category === 'WOMEN' || item.category === 'SAREES' || (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")))) ||
-            (cat === 'MEN' && (item.category === 'MEN' || item.editorialTitle.includes('SHERWANI') || item.fullName.includes("Men's"))) ||
-            (cat === 'KIDS' && (item.category === 'KIDS' || item.fullName.includes('Kids'))) ||
-            (cat === 'FOOTWEAR' && (item.category === 'FOOTWEAR' || item.fullName.includes('Mojari') || item.fullName.includes('Jutti'))) ||
-            (cat === 'ACCESSORIES' && (item.category === 'ACCESSORIES' || item.category === 'JEWELLERY')) ||
-            item.category === cat;
+        const gender = (state.userGender || 'WOMEN').toUpperCase();
+        let matchesCategory = false;
+
+        if (cat === 'FOR_YOU') {
+            if (gender === 'MEN' || gender === 'MALE') {
+                matchesCategory = item.category === 'MEN' ||
+                    item.editorialTitle.includes('SHERWANI') ||
+                    item.fullName.includes("Men's") ||
+                    (item.category === 'FOOTWEAR' && item.fullName.includes('Mojari'));
+            } else if (gender === 'WOMEN' || gender === 'FEMALE') {
+                matchesCategory = item.category === 'WOMEN' ||
+                    item.category === 'SAREES' ||
+                    item.category === 'JEWELLERY' ||
+                    (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")) ||
+                    (item.category === 'FOOTWEAR' && item.fullName.includes('Jutti'));
+            } else {
+                matchesCategory = true;
+            }
+        } else if (cat === 'ALL') {
+            matchesCategory = true;
+        } else if (cat === 'WOMEN') {
+            matchesCategory = item.category === 'WOMEN' || item.category === 'SAREES' || (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's"));
+        } else if (cat === 'MEN') {
+            matchesCategory = item.category === 'MEN' || item.editorialTitle.includes('SHERWANI') || item.fullName.includes("Men's");
+        } else if (cat === 'KIDS') {
+            matchesCategory = item.category === 'KIDS' || item.fullName.includes('Kids');
+        } else if (cat === 'FOOTWEAR') {
+            matchesCategory = item.category === 'FOOTWEAR' || item.fullName.includes('Mojari') || item.fullName.includes('Jutti');
+        } else if (cat === 'ACCESSORIES') {
+            matchesCategory = item.category === 'ACCESSORIES' || item.category === 'JEWELLERY';
+        } else {
+            matchesCategory = item.category === cat;
+        }
         const matchesSearch = !query ||
             item.fullName.toLowerCase().includes(query) ||
             item.editorialTitle.toLowerCase().includes(query);
