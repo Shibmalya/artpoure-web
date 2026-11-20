@@ -959,14 +959,15 @@ function renderOrdersList() {
     const filterStatus = state.orderFilterStatus;
 
     const filtered = state.orders.filter(ord => {
-        const status = (ord.status || 'PENDING').toUpperCase();
-        const payStatus = (ord.paymentStatus || '').toUpperCase();
-        const payMethod = (ord.paymentMethod || '').toUpperCase();
+        const status = (ord.status || 'CONFIRMED').toUpperCase();
+        const payMethod = (ord.paymentMethod || 'RAZORPAY').toUpperCase();
+        const rawPayStatus = (ord.paymentStatus || '').toUpperCase();
+        const payStatus = rawPayStatus || (payMethod === 'COD' ? 'PENDING_COD' : 'PENDING');
 
         let matchesFilter = false;
         if (filterStatus === 'ALL') matchesFilter = true;
-        else if (filterStatus === 'PAID') matchesFilter = payStatus === 'PAID';
-        else if (filterStatus === 'PENDING') matchesFilter = payStatus.includes('PENDING') || status === 'PENDING';
+        else if (filterStatus === 'PAID') matchesFilter = payStatus === 'PAID' || payStatus === 'COLLECTED';
+        else if (filterStatus === 'PENDING') matchesFilter = payStatus === 'PENDING' || payStatus === 'PENDING_COD' || status === 'PENDING';
         else if (filterStatus === 'COD') matchesFilter = payMethod === 'COD';
         else if (filterStatus === 'SHIPPED') matchesFilter = status === 'SHIPPED';
         else if (filterStatus === 'DELIVERED') matchesFilter = status === 'DELIVERED';
@@ -1000,8 +1001,9 @@ function renderOrdersList() {
         const formattedTotal = Number(grandTotal).toLocaleString('en-IN');
 
         const payMethod = ord.paymentMethod || 'RAZORPAY';
-        const payStatus = ord.paymentStatus || 'PENDING';
-        const fulfillmentStatus = ord.status || 'CONFIRMED';
+        const rawPayStatus = (ord.paymentStatus || '').toUpperCase();
+        const payStatus = rawPayStatus || (payMethod === 'COD' ? 'PENDING_COD' : 'PENDING');
+        const fulfillmentStatus = (ord.status || 'CONFIRMED').toUpperCase();
         const trackingNum = ord.trackingNumber || '';
         const courier = ord.courierName || '';
 
@@ -1020,8 +1022,11 @@ function renderOrdersList() {
             `;
         }).join('');
 
-        const payStatusClass = payStatus === 'PAID' ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending');
+        const payStatusClass = (payStatus === 'PAID' || payStatus === 'COLLECTED') ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending');
         const fulfillStatusClass = fulfillmentStatus.toLowerCase();
+        const payBadgeText = payMethod === 'COD'
+            ? (payStatus === 'COLLECTED' ? 'COD: COLLECTED' : 'COD: PENDING_COD')
+            : (payStatus === 'PAID' ? 'PREPAID: PAID' : 'PREPAID: PENDING');
 
         return `
             <div class="order-card" data-order-id="${ord.id}">
@@ -1031,7 +1036,7 @@ function renderOrdersList() {
                         <span class="order-date-text">• ${dateStr}</span>
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <span class="status-badge ${payStatusClass}">${payMethod}: ${payStatus}</span>
+                        <span class="status-badge ${payStatusClass}">${payBadgeText}</span>
                         <span class="status-badge ${fulfillStatusClass}">${fulfillmentStatus}</span>
                     </div>
                 </div>
@@ -1051,7 +1056,7 @@ function renderOrdersList() {
                     <div class="order-info-column">
                         <span class="order-info-label">Payment & Grand Total</span>
                         <span class="order-info-value" style="font-size: 16px; font-weight: 700; color: var(--gold);">₹${formattedTotal}</span>
-                        <span class="order-info-value" style="font-size: 11px; color: var(--text-muted);">${ord.razorpayPaymentId ? `Razorpay ID: ${ord.razorpayPaymentId}` : payMethod}</span>
+                        <span class="order-info-value" style="font-size: 11px; color: var(--text-muted);">${ord.razorpayPaymentId ? `Razorpay ID: ${ord.razorpayPaymentId}` : (payMethod === 'COD' ? `Insured COD (${payStatus})` : payMethod)}</span>
                     </div>
                 </div>
 
@@ -1069,19 +1074,37 @@ function renderOrdersList() {
                     </tbody>
                 </table>
 
-                <!-- Inline Fulfillment Manager -->
-                <div class="order-fulfillment-box">
-                    <label style="font-size: 11px; font-weight: 600; color: var(--gold);">FULFILLMENT:</label>
-                    <select class="fulfillment-select order-status-select" data-id="${ord.id}">
-                        <option value="CONFIRMED" ${fulfillmentStatus === 'CONFIRMED' ? 'selected' : ''}>CONFIRMED</option>
-                        <option value="PACKED" ${fulfillmentStatus === 'PACKED' ? 'selected' : ''}>PACKED</option>
-                        <option value="SHIPPED" ${fulfillmentStatus === 'SHIPPED' ? 'selected' : ''}>SHIPPED</option>
-                        <option value="DELIVERED" ${fulfillmentStatus === 'DELIVERED' ? 'selected' : ''}>DELIVERED</option>
-                        <option value="CANCELLED" ${fulfillmentStatus === 'CANCELLED' ? 'selected' : ''}>CANCELLED</option>
-                    </select>
+                <!-- Inline Fulfillment & Payment Status Manager -->
+                <div class="order-fulfillment-box" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--gold);">FULFILLMENT:</label>
+                        <select class="fulfillment-select order-status-select" data-id="${ord.id}">
+                            <option value="CONFIRMED" ${fulfillmentStatus === 'CONFIRMED' ? 'selected' : ''}>CONFIRMED</option>
+                            <option value="PACKED" ${fulfillmentStatus === 'PACKED' ? 'selected' : ''}>PACKED</option>
+                            <option value="SHIPPED" ${fulfillmentStatus === 'SHIPPED' ? 'selected' : ''}>SHIPPED</option>
+                            <option value="DELIVERED" ${fulfillmentStatus === 'DELIVERED' ? 'selected' : ''}>DELIVERED</option>
+                            <option value="CANCELLED" ${fulfillmentStatus === 'CANCELLED' ? 'selected' : ''}>CANCELLED</option>
+                        </select>
+                    </div>
 
-                    <input type="text" class="fulfillment-input order-courier-input" placeholder="Courier (e.g. BlueDart / Delhivery)" value="${courier}" data-id="${ord.id}">
-                    <input type="text" class="fulfillment-input order-tracking-input" placeholder="AWB / Tracking Number" value="${trackingNum}" data-id="${ord.id}">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--gold);">PAYMENT:</label>
+                        <select class="fulfillment-select order-payment-status-select" data-id="${ord.id}">
+                            ${payMethod === 'COD' ? `
+                                <option value="PENDING_COD" ${payStatus === 'PENDING_COD' ? 'selected' : ''}>COD: PENDING_COD</option>
+                                <option value="COLLECTED" ${payStatus === 'COLLECTED' ? 'selected' : ''}>COD: COLLECTED</option>
+                                <option value="CANCELLED" ${payStatus === 'CANCELLED' ? 'selected' : ''}>CANCELLED</option>
+                            ` : `
+                                <option value="PAID" ${payStatus === 'PAID' ? 'selected' : ''}>PREPAID: PAID</option>
+                                <option value="PENDING" ${payStatus === 'PENDING' ? 'selected' : ''}>PREPAID: PENDING</option>
+                                <option value="REFUNDED" ${payStatus === 'REFUNDED' ? 'selected' : ''}>REFUNDED</option>
+                                <option value="FAILED" ${payStatus === 'FAILED' ? 'selected' : ''}>FAILED</option>
+                            `}
+                        </select>
+                    </div>
+
+                    <input type="text" class="fulfillment-input order-courier-input" placeholder="Courier (e.g. BlueDart)" value="${courier}" data-id="${ord.id}" style="max-width: 140px;">
+                    <input type="text" class="fulfillment-input order-tracking-input" placeholder="AWB / Tracking #" value="${trackingNum}" data-id="${ord.id}" style="max-width: 140px;">
 
                     <button class="btn-primary-action btn-sm save-fulfillment-btn" data-id="${ord.id}">
                         <span>Save Update</span>
@@ -1103,11 +1126,13 @@ async function saveOrderFulfillment(docId) {
     if (!card) return;
 
     const statusSelect = card.querySelector('.order-status-select');
+    const paymentStatusSelect = card.querySelector('.order-payment-status-select');
     const courierInput = card.querySelector('.order-courier-input');
     const trackingInput = card.querySelector('.order-tracking-input');
     const saveBtn = card.querySelector('.save-fulfillment-btn');
 
     const newStatus = statusSelect.value;
+    const newPaymentStatus = paymentStatusSelect ? paymentStatusSelect.value : null;
     const courierVal = courierInput.value.trim();
     const trackingVal = trackingInput.value.trim();
 
@@ -1115,14 +1140,22 @@ async function saveOrderFulfillment(docId) {
     saveBtn.textContent = 'Saving...';
 
     try {
-        await updateDoc(doc(db, "orders", docId), {
+        const updatePayload = {
             status: newStatus,
             courierName: courierVal,
             trackingNumber: trackingVal,
             updatedAt: serverTimestamp()
-        });
+        };
+        if (newPaymentStatus) {
+            updatePayload.paymentStatus = newPaymentStatus;
+            if (newPaymentStatus === 'COLLECTED' || newPaymentStatus === 'PAID') {
+                updatePayload.paidAt = serverTimestamp();
+            }
+        }
 
-        showToast(`Order ${docId} updated to ${newStatus}`, "success");
+        await updateDoc(doc(db, "orders", docId), updatePayload);
+
+        showToast(`Order ${docId} updated: ${newStatus} (${newPaymentStatus || ''})`, "success");
         await fetchOrders();
     } catch (err) {
         console.error("Order fulfillment update error:", err);
