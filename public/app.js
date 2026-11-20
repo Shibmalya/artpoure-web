@@ -535,7 +535,10 @@ function renderCatalog() {
         } else if (cat === 'WOMEN') {
             matchesCategory = item.category === 'WOMEN' ||
                 item.category === 'SAREES' ||
+                item.category === 'ACCESSORIES' ||
+                item.category === 'JEWELLERY' ||
                 (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")) ||
+                (item.category === 'FOOTWEAR' && !item.fullName.includes("Men's")) ||
                 (isCustomOrHandcrafted && !item.fullName.includes("Men's"));
         } else if (cat === 'MEN') {
             matchesCategory = item.category === 'MEN' ||
@@ -576,6 +579,18 @@ function renderCatalog() {
         return matchesCategory && matchesSearch;
     });
 
+    // Toggle Hero Slide: Hide if specific sub-category is selected OR if 0 items exist
+    const heroShowcase = document.querySelector('.hero-showcase');
+    if (heroShowcase) {
+        heroShowcase.style.display = (state.selectedSubCategory || filtered.length === 0) ? 'none' : 'block';
+    }
+
+    // Toggle Curated Collection Header: Hide if 0 items exist
+    const collectionHeaderRow = document.querySelector('.collection-header-row');
+    if (collectionHeaderRow) {
+        collectionHeaderRow.style.display = filtered.length === 0 ? 'none' : 'flex';
+    }
+
     const collectionCount = document.getElementById('collectionCount');
     if (collectionCount) {
         collectionCount.textContent = `${filtered.length} PIECES`;
@@ -583,9 +598,13 @@ function renderCatalog() {
 
     if (filtered.length === 0) {
         elements.productGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-secondary);">
-                <p style="font-family: var(--font-cinzel); font-size: 16px; margin-bottom: 8px;">NO MASTERPIECES FOUND</p>
-                <p style="font-size: 12px;">Try adjusting your category filter or search terms</p>
+            <div class="coming-soon-card" style="grid-column: 1 / -1; text-align: center; padding: 70px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; margin: 20px 0;">
+                <div style="font-size: 28px; color: var(--accent-gold); margin-bottom: 12px;">✦</div>
+                <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: var(--accent-gold); margin-bottom: 6px;">ARTPOURE ATELIER</div>
+                <h2 style="font-family: var(--font-cinzel); font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: 1.5px; margin-bottom: 10px;">COMING SOON</h2>
+                <p style="font-size: 13px; color: var(--text-secondary); max-width: 380px; margin: 0 auto; line-height: 1.6;">
+                    New handcrafted masterweaves and curated heirlooms are arriving shortly from our master artisans.
+                </p>
             </div>
         `;
         return;
@@ -2438,9 +2457,9 @@ function updateEditorialPageContent() {
         const isArtClusive = product.category === 'CUSTOM' ||
             product.category === 'HAND_PRINTED' ||
             product.category === 'HAND_PAINTED' ||
-            (product.fullName && (product.fullName.toLowerCase().includes('hand-paint') || product.fullName.toLowerCase().includes('hand-print') || product.fullName.toLowerCase().includes('handcrafted') || product.fullName.toLowerCase().includes('bespoke'))) ||
-            (product.editorialTitle && (product.editorialTitle.toLowerCase().includes('hand') || product.editorialTitle.toLowerCase().includes('bespoke'))) ||
-            (product.description && (product.description.toLowerCase().includes('hand-painted') || product.description.toLowerCase().includes('hand-printed') || product.description.toLowerCase().includes('bespoke'))) ||
+            (product.fullName && (product.fullName.toLowerCase().includes('hand-paint') || product.fullName.toLowerCase().includes('hand-print') || product.fullName.toLowerCase().includes('hand paint') || product.fullName.toLowerCase().includes('hand print') || product.fullName.toLowerCase().includes('bespoke'))) ||
+            (product.editorialTitle && product.editorialTitle.toLowerCase().includes('bespoke')) ||
+            (product.description && (product.description.toLowerCase().includes('hand-painted') || product.description.toLowerCase().includes('hand-printed') || product.description.toLowerCase().includes('hand painted') || product.description.toLowerCase().includes('hand printed') || product.description.toLowerCase().includes('bespoke atelier'))) ||
             (product.topLeftSpec && (product.topLeftSpec.toLowerCase().includes('haute') || product.topLeftSpec.toLowerCase().includes('bespoke')));
         consultBtn.style.display = isArtClusive ? 'flex' : 'none';
     }
