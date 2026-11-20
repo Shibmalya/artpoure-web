@@ -383,6 +383,7 @@ async function init() {
     setupHeroShowcase();
     renderSubCategories(state.selectedCategory);
     renderCatalog();
+    renderVaultPieces();
     renderAppointmentsList();
     renderOrdersList();
     updateBadges();
@@ -498,32 +499,48 @@ function renderSubCategories(category) {
 // --- RENDER PRODUCT GRID ---
 function renderCatalog() {
     const query = state.searchQuery.toLowerCase().trim();
+    const isNewArrivals = state.selectedSubCategory === 'new-arrivals';
     const filtered = state.products.filter(item => {
         const cat = state.selectedCategory;
         const gender = (state.userGender || 'WOMEN').toUpperCase();
         let matchesCategory = false;
 
-        if (cat === 'FOR_YOU') {
+        const isCustomOrHandcrafted = item.category === 'CUSTOM' ||
+            item.category === 'HAND_PRINTED' ||
+            item.category === 'HAND_PAINTED' ||
+            (item.fullName && (item.fullName.toLowerCase().includes('hand-paint') || item.fullName.toLowerCase().includes('hand-print')));
+
+        if (isNewArrivals) {
+            matchesCategory = true;
+        } else if (cat === 'FOR_YOU') {
             if (gender === 'MEN' || gender === 'MALE') {
                 matchesCategory = item.category === 'MEN' ||
                     item.editorialTitle.includes('SHERWANI') ||
                     item.fullName.includes("Men's") ||
-                    (item.category === 'FOOTWEAR' && item.fullName.includes('Mojari'));
+                    (item.category === 'FOOTWEAR' && item.fullName.includes('Mojari')) ||
+                    (isCustomOrHandcrafted && item.fullName.includes("Men's"));
             } else if (gender === 'WOMEN' || gender === 'FEMALE') {
                 matchesCategory = item.category === 'WOMEN' ||
                     item.category === 'SAREES' ||
                     item.category === 'JEWELLERY' ||
                     (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")) ||
-                    (item.category === 'FOOTWEAR' && item.fullName.includes('Jutti'));
+                    (item.category === 'FOOTWEAR' && item.fullName.includes('Jutti')) ||
+                    (isCustomOrHandcrafted && !item.fullName.includes("Men's"));
             } else {
                 matchesCategory = true;
             }
         } else if (cat === 'ALL') {
             matchesCategory = true;
         } else if (cat === 'WOMEN') {
-            matchesCategory = item.category === 'WOMEN' || item.category === 'SAREES' || (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's"));
+            matchesCategory = item.category === 'WOMEN' ||
+                item.category === 'SAREES' ||
+                (item.category === 'CLOTHES' && !item.editorialTitle.includes('SHERWANI') && !item.fullName.includes("Men's")) ||
+                (isCustomOrHandcrafted && !item.fullName.includes("Men's"));
         } else if (cat === 'MEN') {
-            matchesCategory = item.category === 'MEN' || item.editorialTitle.includes('SHERWANI') || item.fullName.includes("Men's");
+            matchesCategory = item.category === 'MEN' ||
+                item.editorialTitle.includes('SHERWANI') ||
+                item.fullName.includes("Men's") ||
+                (isCustomOrHandcrafted && item.fullName.includes("Men's"));
         } else if (cat === 'KIDS') {
             matchesCategory = item.category === 'KIDS' || item.fullName.includes('Kids');
         } else if (cat === 'FOOTWEAR') {
@@ -531,10 +548,10 @@ function renderCatalog() {
         } else if (cat === 'ACCESSORIES') {
             matchesCategory = item.category === 'ACCESSORIES' || item.category === 'JEWELLERY';
         } else {
-            matchesCategory = item.category === cat;
+            matchesCategory = item.category === cat || isCustomOrHandcrafted;
         }
 
-        if (state.selectedSubCategory) {
+        if (state.selectedSubCategory && !isNewArrivals) {
             const sub = state.selectedSubCategory;
             let matchesSub = false;
             if (sub === 'sarees') matchesSub = item.category === 'SAREES' || item.fullName.toLowerCase().includes('saree');
@@ -761,12 +778,26 @@ function updateBadges() {
 let heroCycleTimer = null;
 let currentHeroIndex = 0;
 
+function getHeroShowcasePool() {
+    if (!state.products || state.products.length === 0) return [];
+    const bespoke = state.products.filter(p =>
+        p.category === 'CUSTOM' ||
+        p.category === 'HAND_PRINTED' ||
+        p.category === 'HAND_PAINTED' ||
+        (p.fullName && (p.fullName.toLowerCase().includes('hand-paint') || p.fullName.toLowerCase().includes('hand-print'))) ||
+        (p.editorialTitle && p.editorialTitle.toLowerCase().includes('hand'))
+    );
+    const regular = state.products.filter(p => !bespoke.includes(p));
+    return [...bespoke, ...regular];
+}
+
 function setupHeroShowcase() {
     const heroCard = document.getElementById('heroCard');
     const heroIndicators = document.getElementById('heroIndicators');
     const collectionCount = document.getElementById('collectionCount');
 
-    if (!heroCard || state.products.length === 0) return;
+    const pool = getHeroShowcasePool();
+    if (!heroCard || pool.length === 0) return;
 
     if (collectionCount) {
         collectionCount.textContent = `${state.products.length} PIECES`;
@@ -774,7 +805,7 @@ function setupHeroShowcase() {
 
     // Build indicators
     if (heroIndicators) {
-        heroIndicators.innerHTML = state.products.map((_, i) => `
+        heroIndicators.innerHTML = pool.map((_, i) => `
             <div class="hero-indicator-dot ${i === currentHeroIndex ? 'active' : ''}" data-index="${i}"></div>
         `).join('');
 
@@ -792,11 +823,12 @@ function setupHeroShowcase() {
 }
 
 function showHeroIndex(index) {
-    if (state.products.length === 0) return;
-    currentHeroIndex = (index + state.products.length) % state.products.length;
-    const product = state.products[currentHeroIndex];
+    const pool = getHeroShowcasePool();
+    if (pool.length === 0) return;
+    currentHeroIndex = (index + pool.length) % pool.length;
+    const product = pool[currentHeroIndex];
     const activeVarIdx = state.selectedVariants[product.id] || 0;
-    const variant = product.variants[activeVarIdx] || product.variants[0];
+    const variant = (product.variants && product.variants[activeVarIdx]) || (product.variants && product.variants[0]) || {};
 
     const heroCard = document.getElementById('heroCard');
     const heroModelImg = document.getElementById('heroModelImg');
@@ -806,12 +838,24 @@ function showHeroIndex(index) {
     const heroPageCounter = document.getElementById('heroPageCounter');
 
     if (heroCard) heroCard.style.backgroundColor = variant.canvasHex || '#4A0E17';
-    if (heroTitle) heroTitle.textContent = product.editorialTitle;
-    if (heroSub) heroSub.textContent = product.details || product.fullName;
-    if (heroPrice) heroPrice.textContent = `₹${product.priceInr.toLocaleString('en-IN')}`;
+    if (heroTitle) heroTitle.textContent = product.editorialTitle || '';
+    if (heroSub) heroSub.textContent = product.details || product.fullName || '';
+    if (heroPrice) heroPrice.textContent = `₹${(product.priceInr || 0).toLocaleString('en-IN')}`;
     if (heroPageCounter) {
-        const total = state.products.length.toString().padStart(2, '0');
+        const total = pool.length.toString().padStart(2, '0');
         const curr = (currentHeroIndex + 1).toString().padStart(2, '0');
+        heroPageCounter.textContent = `${curr} / ${total}`;
+    }
+    if (heroModelImg) {
+        heroModelImg.src = variant.imageUrl || product.imageUrl || '';
+        heroModelImg.alt = product.fullName || '';
+    }
+
+    // Update indicator dots
+    document.querySelectorAll('.hero-indicator-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === currentHeroIndex);
+    });
+}
         heroPageCounter.textContent = `${curr} / ${total}`;
     }
     if (heroModelImg) {
@@ -2208,7 +2252,19 @@ async function validateAndPlaceOrder() {
 // --- RENDER ARTCLUSIVE VAULT PIECES ---
 function renderVaultPieces() {
     if (!elements.vaultGrid) return;
-    const vaultItems = state.products.filter(p => ["saree-01", "saree-02", "jewel-02", "clothes-01"].includes(p.id));
+    const bespokePieces = state.products.filter(p =>
+        p.category === 'CUSTOM' ||
+        p.category === 'HAND_PRINTED' ||
+        p.category === 'HAND_PAINTED' ||
+        (p.fullName && (p.fullName.toLowerCase().includes('hand-paint') || p.fullName.toLowerCase().includes('hand-print'))) ||
+        (p.editorialTitle && p.editorialTitle.toLowerCase().includes('hand')) ||
+        (p.description && (p.description.toLowerCase().includes('hand-painted') || p.description.toLowerCase().includes('hand-printed')))
+    );
+    const heritageVault = state.products.filter(p => ["saree-01", "saree-02", "jewel-02", "clothes-01"].includes(p.id));
+    const combined = [...bespokePieces, ...heritageVault];
+    const vaultItems = combined.filter((item, index, self) =>
+        index === self.findIndex(t => t.id === item.id)
+    );
     elements.vaultGrid.innerHTML = vaultItems.map(item => {
         const variant = item.variants[0];
         return `

@@ -331,7 +331,7 @@ function renderProductsGrid() {
                         <span class="variant-count-text">${variantsList.length} color${variantsList.length === 1 ? '' : 's'}</span>
                     </div>
                     <div class="card-actions-bar">
-                        <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit Heilloom</button>
+                        <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit Heirloom</button>
                         <button class="btn-card-action danger delete-prod-btn" data-id="${prod.id}">✕ Delete</button>
                     </div>
                 </div>
@@ -366,7 +366,7 @@ el.productCategoryFilters.querySelectorAll('.filter-pill').forEach(pill => {
 // Toggle Add/Edit Product Panel
 function openProductForm(isEditing = false) {
     el.productFormPanel.style.display = 'block';
-    el.formPanelTitle.textContent = isEditing ? `Edit Heilloom (${state.editingProductId})` : 'Create New Heilloom Piece';
+    el.formPanelTitle.textContent = isEditing ? `Edit Heirloom (${state.editingProductId})` : 'Create New Heirloom Piece';
     el.toggleProductFormText.textContent = 'Close Editor';
     el.productFormPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -406,7 +406,43 @@ document.getElementById('prodEditorialTitle').addEventListener('input', e => {
     }
 });
 
-// Dynamic Variants Builder
+// Render thumbnail gallery for a variant card
+function renderVariantGallery(card) {
+    const galleryEl = card.querySelector('.variant-gallery-preview');
+    if (!galleryEl) return;
+    const images = card._variantImages || [];
+
+    if (images.length === 0) {
+        galleryEl.innerHTML = `
+            <div class="variant-gallery-empty-prompt">
+                <span style="font-size: 16px;">📷</span>
+                <span>No photos added yet. Select one or more files below.</span>
+            </div>
+        `;
+        return;
+    }
+
+    galleryEl.innerHTML = images.map((img, idx) => `
+        <div class="variant-gallery-item" data-index="${idx}">
+            <img src="${img.url || img.previewUrl}" alt="Photo ${idx + 1}">
+            ${idx === 0 ? '<span class="primary-badge">Primary</span>' : ''}
+            <button type="button" class="btn-remove-thumb" data-index="${idx}" title="Remove photo">✕</button>
+        </div>
+    `).join('');
+
+    galleryEl.querySelectorAll('.btn-remove-thumb').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const removeIdx = parseInt(btn.dataset.index, 10);
+            if (!isNaN(removeIdx) && card._variantImages) {
+                card._variantImages.splice(removeIdx, 1);
+                renderVariantGallery(card);
+            }
+        });
+    });
+}
+
+// Dynamic Variants Builder with Multi-Photo Gallery Support
 function createVariantCard(variantData = {}) {
     state.variantCounter++;
     const vId = variantData.id || `var-${state.variantCounter}`;
@@ -414,11 +450,19 @@ function createVariantCard(variantData = {}) {
     const swatchHex = variantData.swatchHex || '#800020';
     const canvasHex = variantData.canvasHex || '#4A0E17';
     const inStock = variantData.inStock !== false;
-    const imageUrl = variantData.imageUrl || '';
+
+    // Collect initial images array from variantData
+    const initialImages = Array.isArray(variantData.images) && variantData.images.length > 0
+        ? variantData.images
+        : (variantData.imageUrl ? [variantData.imageUrl] : []);
 
     const card = document.createElement('div');
     card.className = 'variant-card';
     card.dataset.variantId = vId;
+    card._variantImages = initialImages.filter(Boolean).map(url => ({
+        type: 'existing',
+        url: url
+    }));
 
     card.innerHTML = `
         <div class="variant-card-top">
@@ -453,16 +497,20 @@ function createVariantCard(variantData = {}) {
         </div>
 
         <div class="variant-photo-section">
-            <div class="variant-thumbnail-preview">
-                ${imageUrl ? `<img src="${imageUrl}" class="thumb-img" alt="Preview">` : `<span class="empty-thumb">📷</span>`}
-            </div>
+            <label style="font-size: 11px; font-weight: 600; color: var(--gold); text-transform: uppercase; letter-spacing: 0.5px;">Photos for this Color Variant (First is Primary Card Photo)</label>
+            <div class="variant-gallery-preview"></div>
             <div class="variant-photo-inputs">
-                <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Upload Photo to Firebase Storage</label>
-                <input type="file" class="file-input-custom variant-file-input" accept="image/*">
-                <input type="url" class="form-input variant-url-input" value="${imageUrl}" placeholder="Or keep/paste photo URL...">
+                <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Upload Photos (Select one or multiple files):</label>
+                <input type="file" class="file-input-custom variant-file-input" accept="image/*" multiple>
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                    <input type="url" class="form-input variant-add-url-input" placeholder="Or paste photo URL here...">
+                    <button type="button" class="btn-secondary-action btn-sm variant-add-url-btn">+ Add URL</button>
+                </div>
             </div>
         </div>
     `;
+
+    renderVariantGallery(card);
 
     // Color picker change listeners
     const swatchInput = card.querySelector('.variant-swatch-input');
@@ -477,14 +525,42 @@ function createVariantCard(variantData = {}) {
         canvasHexSpan.textContent = e.target.value.toUpperCase();
     });
 
-    // File input thumbnail preview
+    // File input multi-selection listener
     const fileInput = card.querySelector('.variant-file-input');
-    const thumbWrap = card.querySelector('.variant-thumbnail-preview');
     fileInput.addEventListener('change', e => {
-        const file = e.target.files[0];
-        if (file) {
-            const previewUrl = URL.createObjectURL(file);
-            thumbWrap.innerHTML = `<img src="${previewUrl}" class="thumb-img" alt="Preview">`;
+        if (e.target.files && e.target.files.length > 0) {
+            for (let i = 0; i < e.target.files.length; i++) {
+                const file = e.target.files[i];
+                card._variantImages.push({
+                    type: 'file',
+                    file: file,
+                    previewUrl: URL.createObjectURL(file)
+                });
+            }
+            renderVariantGallery(card);
+            e.target.value = ''; // Reset so user can select more files if needed
+        }
+    });
+
+    // Add URL button listener
+    const addUrlInput = card.querySelector('.variant-add-url-input');
+    const addUrlBtn = card.querySelector('.variant-add-url-btn');
+    const addUrlAction = () => {
+        const url = addUrlInput.value.trim();
+        if (url) {
+            card._variantImages.push({
+                type: 'existing',
+                url: url
+            });
+            addUrlInput.value = '';
+            renderVariantGallery(card);
+        }
+    };
+    addUrlBtn.addEventListener('click', addUrlAction);
+    addUrlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addUrlAction();
         }
     });
 
@@ -567,7 +643,7 @@ function confirmDeleteProduct(productId) {
     const prod = state.products.find(p => p.id === productId);
     const title = prod ? prod.fullName : productId;
     showConfirmModal(
-        "Delete Heilloom Product",
+        "Delete Heirloom Product",
         `Are you sure you want to permanently delete "${title}" (${productId}) from the Artpoure catalog? This action cannot be reversed.`,
         async () => {
             try {
@@ -625,24 +701,31 @@ el.productEditForm.addEventListener('submit', async e => {
             const swatchHex = card.querySelector('.variant-swatch-input').value;
             const canvasHex = card.querySelector('.variant-canvas-input').value;
             const inStock = card.querySelector('.variant-instock-check').checked;
-            const fileInput = card.querySelector('.variant-file-input');
-            const urlInput = card.querySelector('.variant-url-input');
 
-            let imageUrl = urlInput.value.trim();
-
-            // If a new file is chosen, upload to Firebase Storage
-            if (fileInput.files && fileInput.files[0]) {
-                const file = fileInput.files[0];
-                el.formProgressMessage.textContent = `Uploading photo for variant "${colorName}" (${i + 1}/${variantCards.length})...`;
-                const fileExt = file.name.split('.').pop() || 'jpg';
-                const storagePath = `products/${prodId}/${vId}_${Date.now()}.${fileExt}`;
-                const storageRef = ref(storage, storagePath);
-                const snapshot = await uploadBytes(storageRef, file);
-                imageUrl = await getDownloadURL(snapshot.ref);
+            const imageItems = card._variantImages || [];
+            if (imageItems.length === 0) {
+                throw new Error(`Variant "${colorName}" requires at least 1 photo.`);
             }
 
-            if (!imageUrl) {
-                throw new Error(`Variant "${colorName}" requires a photo file upload or image URL.`);
+            const resolvedUrls = [];
+            for (let j = 0; j < imageItems.length; j++) {
+                const item = imageItems[j];
+                if (item.type === 'existing' && item.url) {
+                    resolvedUrls.push(item.url);
+                } else if (item.type === 'file' && item.file) {
+                    el.formProgressMessage.textContent = `Uploading photo ${j + 1}/${imageItems.length} for variant "${colorName}"...`;
+                    const file = item.file;
+                    const fileExt = file.name.split('.').pop() || 'jpg';
+                    const storagePath = `products/${prodId}/${vId}_${Date.now()}_${j}.${fileExt}`;
+                    const storageRef = ref(storage, storagePath);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    const downloadUrl = await getDownloadURL(snapshot.ref);
+                    resolvedUrls.push(downloadUrl);
+                }
+            }
+
+            if (resolvedUrls.length === 0) {
+                throw new Error(`Variant "${colorName}" requires at least 1 valid photo.`);
             }
 
             variantsData.push({
@@ -650,8 +733,8 @@ el.productEditForm.addEventListener('submit', async e => {
                 colorName: colorName || `Color ${i + 1}`,
                 swatchHex: swatchHex,
                 canvasHex: canvasHex,
-                imageUrl: imageUrl,
-                images: [imageUrl],
+                imageUrl: resolvedUrls[0],
+                images: resolvedUrls,
                 inStock: inStock
             });
         }
@@ -683,7 +766,7 @@ el.productEditForm.addEventListener('submit', async e => {
         // Write to Firestore products collection
         await setDoc(doc(db, "products", prodId), productDoc, { merge: true });
 
-        showToast(`Heilloom "${fullName}" saved successfully!`, "success");
+        showToast(`Heirloom "${fullName}" saved successfully!`, "success");
         closeProductForm();
         await fetchProducts();
 
@@ -790,7 +873,7 @@ function renderOrdersList() {
 
         const itemsList = ord.items || [];
         const itemsRows = itemsList.map(item => {
-            const title = item.fullName || item.title || item.productId || 'Heilloom';
+            const title = item.fullName || item.title || item.productId || 'Heirloom';
             const color = item.colorName || item.variantId || 'Standard';
             const qty = item.quantity || 1;
             const price = Number(item.unitPriceInr || item.priceInr || 0).toLocaleString('en-IN');
