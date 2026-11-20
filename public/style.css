@@ -3349,3 +3349,417 @@ body.artclusive-mode .brand-title {
         transform: scale(1);
     }
 }
+
+/* ==========================================================================
+   ArtClusive Home Banner (1:1 with Android HomeScreen.kt)
+   ========================================================================== */
+.artclusive-home-banner {
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, rgba(20, 19, 18, 0.95), rgba(30, 27, 24, 0.95));
+    border: 1px solid rgba(184, 134, 11, 0.4);
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.artclusive-banner-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(184, 134, 11, 0.15);
+    border: 1px solid rgba(184, 134, 11, 0.4);
+    color: var(--accent-gold);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+}
+
+.artclusive-banner-title {
+    font-family: var(--font-cinzel);
+    font-size: 18px;
+    font-weight: 800;
+    color: #FAF9F5;
+    letter-spacing: 1.2px;
+    margin: 0 0 6px;
+}
+
+.artclusive-banner-desc {
+    font-size: 12px;
+    color: #C8C5BC;
+    line-height: 1.5;
+    margin: 0 0 16px;
+    max-width: 480px;
+}
+
+.artclusive-banner-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.banner-vault-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--accent-gold);
+    color: #141312;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.banner-vault-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(184, 134, 11, 0.4);
+}
+
+.banner-commission-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #FAF9F5;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.banner-commission-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ==========================================================================
+   Curated Picks Horizontal Rail (1:1 with Android HomeScreen.kt)
+   ========================================================================== */
+.curated-picks-section {
+    margin-bottom: 28px;
+}
+
+.curated-picks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.curated-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.curated-header-title {
+    font-family: var(--font-cinzel);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    color: var(--text-primary);
+}
+
+.curated-header-for-you {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--accent-gold);
+}
+
+.curated-header-count {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+}
+
+.curated-picks-rail {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 4px 2px 14px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.curated-picks-rail::-webkit-scrollbar {
+    height: 4px;
+}
+
+.curated-picks-rail::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.curated-rail-card {
+    flex: 0 0 150px;
+    height: 200px;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    scroll-snap-align: start;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    background: var(--surface);
+}
+
+.curated-rail-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.curated-card-media {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.curated-card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s ease;
+}
+
+.curated-rail-card:hover .curated-card-media img {
+    transform: scale(1.04);
+}
+
+.curated-badge-pill {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(6px);
+    border: 0.8px solid rgba(255, 255, 255, 0.2);
+    color: #FFFFFF;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    padding: 3px 7px;
+    border-radius: 12px;
+    z-index: 2;
+}
+
+.curated-badge-pill.gold-badge {
+    border-color: rgba(184, 134, 11, 0.6);
+    color: #F8D377;
+    background: rgba(20, 16, 10, 0.75);
+}
+
+.curated-card-overlay {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.4) 65%, transparent 100%);
+    padding: 16px 10px 10px;
+    z-index: 2;
+}
+
+.curated-card-title {
+    font-family: var(--font-cinzel);
+    font-size: 11px;
+    font-weight: 800;
+    color: #FFFFFF;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.curated-card-sub {
+    font-size: 9.5px;
+    color: #D1CFC7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 2px 0 4px;
+}
+
+.curated-card-price {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--accent-gold);
+}
+
+/* ==========================================================================
+   Empty State Retention Buttons & Waitlist Modal
+   ========================================================================== */
+.empty-action-btn {
+    padding: 11px 20px;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.empty-btn-gold {
+    background: var(--accent-gold);
+    color: #141312;
+    border: none;
+    border-radius: 24px;
+}
+
+.empty-btn-gold:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(184, 134, 11, 0.4);
+}
+
+.empty-btn-outline {
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+}
+
+.empty-btn-outline:hover {
+    border-color: var(--accent-gold);
+}
+
+.empty-btn-subtle {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.empty-btn-subtle:hover {
+    color: var(--text-primary);
+}
+
+/* Waitlist Modal */
+.waitlist-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(8px);
+    z-index: 2100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.waitlist-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    max-width: 420px;
+    width: 100%;
+    padding: 24px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    animation: fadeInScale 0.25s ease-out;
+}
+
+.waitlist-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.waitlist-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-gold);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+}
+
+.waitlist-title {
+    font-family: var(--font-cinzel);
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+}
+
+.waitlist-desc {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0 0 18px;
+}
+
+.waitlist-form .form-group {
+    margin-bottom: 16px;
+}
+
+.waitlist-form label {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.waitlist-form input {
+    width: 100%;
+    padding: 11px 14px;
+    background: var(--surface-elevated, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.waitlist-form input:focus {
+    border-color: var(--accent-gold);
+}
+
+.waitlist-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    align-items: center;
+}
+
+.waitlist-cancel-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 14px;
+    cursor: pointer;
+}
+
+.waitlist-submit-btn {
+    background: var(--accent-gold);
+    color: #141312;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.waitlist-submit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(184, 134, 11, 0.4);
+}
+

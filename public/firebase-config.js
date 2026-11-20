@@ -15,6 +15,7 @@ import {
 import {
     getFirestore,
     collection,
+    addDoc,
     getDocs,
     doc,
     setDoc,
@@ -61,6 +62,7 @@ export {
     signInWithPopup,
     updateProfile,
     collection,
+    addDoc,
     getDocs,
     doc,
     setDoc,

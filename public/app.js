@@ -9,10 +9,12 @@ import {
     functions,
     httpsCallable,
     collection,
+    addDoc,
     getDocs,
     doc,
     setDoc,
     getDoc,
+    serverTimestamp,
     onAuthStateChanged,
     signInAnonymously,
     signOut,
@@ -499,6 +501,229 @@ function renderSubCategories(category) {
     }).join('');
 }
 
+// --- LOCAL USER AFFINITY RECORDING (Matching Android StoreViewModel) ---
+function recordProductAffinity(product) {
+    if (!product) return;
+    try {
+        let affinityTags = JSON.parse(localStorage.getItem('artpoure_affinity_tags') || '[]');
+        let affinityCats = JSON.parse(localStorage.getItem('artpoure_affinity_cats') || '[]');
+        if (product.category && !affinityCats.includes(product.category)) {
+            affinityCats.push(product.category);
+            localStorage.setItem('artpoure_affinity_cats', JSON.stringify(affinityCats.slice(-20)));
+        }
+        if (product.occasionTags && Array.isArray(product.occasionTags)) {
+            product.occasionTags.forEach(t => {
+                const tl = t.toLowerCase();
+                if (!affinityTags.includes(tl)) affinityTags.push(tl);
+            });
+            localStorage.setItem('artpoure_affinity_tags', JSON.stringify(affinityTags.slice(-30)));
+        }
+    } catch (_) {}
+}
+
+// --- HYBRID CURATED PICKS RANKING (Zero-Empty Fallback matching StoreViewModel.kt) ---
+function computeCuratedPicks(products) {
+    if (!products || products.length === 0) return [];
+
+    let affinityTags = [];
+    let affinityCats = [];
+    try {
+        affinityTags = JSON.parse(localStorage.getItem('artpoure_affinity_tags') || '[]');
+        affinityCats = JSON.parse(localStorage.getItem('artpoure_affinity_cats') || '[]');
+    } catch (_) {}
+
+    const wishProducts = products.filter(p => state.wishlist && state.wishlist.has(p.id));
+    wishProducts.forEach(p => {
+        if (p.category && !affinityCats.includes(p.category)) affinityCats.push(p.category);
+        if (p.occasionTags && Array.isArray(p.occasionTags)) {
+            p.occasionTags.forEach(t => {
+                const tl = t.toLowerCase();
+                if (!affinityTags.includes(tl)) affinityTags.push(tl);
+            });
+        }
+    });
+
+    const now = Date.now();
+    const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+    const gender = (state.userGender || 'WOMEN').toUpperCase();
+
+    const scored = products.map(product => {
+        let score = 0;
+        if (product.isCurated) score += 50;
+        const isCustomOrHandcrafted = product.category === 'CUSTOM' ||
+            product.category === 'HAND_PRINTED' ||
+            product.category === 'HAND_PAINTED' ||
+            (product.fullName && (product.fullName.toLowerCase().includes('hand-paint') || product.fullName.toLowerCase().includes('hand-print') || product.fullName.toLowerCase().includes('handcrafted')));
+        if (isCustomOrHandcrafted) score += 20;
+
+        const updatedTime = product.updatedAtMillis || (product.updatedAt?.seconds ? product.updatedAt.seconds * 1000 : 0);
+        if (updatedTime > 0 && (now - updatedTime) <= fourteenDaysMs) score += 10;
+
+        const matchesAffinityCat = affinityCats.includes(product.category);
+        const matchesAffinityTag = product.occasionTags && Array.isArray(product.occasionTags) &&
+            product.occasionTags.some(t => affinityTags.includes(t.toLowerCase()));
+        if (matchesAffinityCat || matchesAffinityTag) score += 25;
+
+        const pGender = (product.gender || 'WOMEN').toUpperCase();
+        if (pGender === gender || pGender === 'UNISEX') score += 5;
+
+        return { product, score };
+    }).sort((a, b) => b.score - a.score).map(x => x.product);
+
+    const highlighted = scored.filter(p => p.isCurated || p.isTrending || p.category === 'CUSTOM' || (p.fullName && p.fullName.toLowerCase().includes('hand-paint')));
+    if (highlighted.length > 0) {
+        return highlighted.slice(0, 10);
+    } else {
+        const customPieces = products.filter(p => p.category === 'CUSTOM' || (p.fullName && p.fullName.toLowerCase().includes('hand-paint')));
+        const newest = [...products].sort((a, b) => (b.updatedAtMillis || 0) - (a.updatedAtMillis || 0));
+        const combined = [...customPieces, ...newest, ...products];
+        const unique = [];
+        const seen = new Set();
+        for (const item of combined) {
+            if (!seen.has(item.id)) {
+                seen.add(item.id);
+                unique.push(item);
+            }
+        }
+        return unique.slice(0, 10);
+    }
+}
+
+function renderCuratedPicks() {
+    const section = document.getElementById('curatedPicksSection');
+    const rail = document.getElementById('curatedPicksRail');
+    const countEl = document.getElementById('curatedPicksCount');
+    if (!section || !rail) return;
+
+    const isSubCategorySelected = !!state.selectedSubCategory;
+    if (isSubCategorySelected || state.products.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    const curated = computeCuratedPicks(state.products);
+    if (curated.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    section.style.display = 'block';
+    if (countEl) countEl.textContent = `${curated.length} EDITS`;
+
+    rail.innerHTML = curated.map(product => {
+        const activeIdx = state.selectedVariants[product.id] || 0;
+        const variant = product.variants[activeIdx] || product.variants[0];
+        const isArtclusive = product.category === 'CUSTOM' ||
+            product.category === 'HAND_PRINTED' ||
+            product.category === 'HAND_PAINTED' ||
+            (product.fullName && product.fullName.toLowerCase().includes('hand-paint'));
+        const badgeLabel = isArtclusive ? '1-OF-1 ARTCLUSIVE' : (product.isCurated ? "CURATOR'S PICK" : 'HAUTE EDIT');
+
+        return `
+            <div class="curated-rail-card" data-curated-id="${product.id}" title="${product.fullName}">
+                <div class="curated-card-media" style="background-color: ${variant.canvasHex || '#1C1A18'};">
+                    <img src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}" loading="lazy">
+                    <div class="curated-badge-pill ${isArtclusive ? 'gold-badge' : ''}">${badgeLabel}</div>
+                    <div class="curated-card-overlay">
+                        <div class="curated-card-title">${product.editorialTitle}</div>
+                        <div class="curated-card-sub">${product.fullName}</div>
+                        <div class="curated-card-price">₹${product.priceInr.toLocaleString('en-IN')}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    rail.querySelectorAll('.curated-rail-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const prodId = card.dataset.curatedId;
+            const product = state.products.find(p => p.id === prodId);
+            if (!product) return;
+            recordProductAffinity(product);
+            const isArtclusive = product.category === 'CUSTOM' ||
+                product.category === 'HAND_PRINTED' ||
+                product.category === 'HAND_PAINTED' ||
+                (product.fullName && product.fullName.toLowerCase().includes('hand-paint'));
+            if (isArtclusive) {
+                const rect = card.getBoundingClientRect();
+                navigateToArtClusiveProduct(product, rect);
+            } else {
+                openEditorialPage(product);
+            }
+        });
+    });
+}
+
+// --- WAITLIST MODAL & SUBMISSION (Matching Android StoreViewModel) ---
+export function openWaitlistModal(categoryName = '') {
+    const overlay = document.getElementById('waitlistModalOverlay');
+    const title = document.getElementById('waitlistTitle');
+    const desc = document.getElementById('waitlistDesc');
+    const input = document.getElementById('waitlistContact');
+    const err = document.getElementById('waitlistContactError');
+    if (!overlay) return;
+
+    const formattedCat = (categoryName || state.selectedSubCategory || state.selectedCategory || 'this collection').replace('-', ' ').toUpperCase();
+    if (title) title.textContent = `${formattedCat} WAITLIST`;
+    if (desc) desc.textContent = `We are currently curating handloom masterweaves for ${formattedCat}. Leave your WhatsApp number or email to receive private concierge priority upon arrival.`;
+    if (input) {
+        input.value = state.userPhone || (auth.currentUser?.phoneNumber ? auth.currentUser.phoneNumber.replace('+91', '') : '') || '';
+    }
+    if (err) err.style.display = 'none';
+
+    overlay.style.display = 'flex';
+    overlay.dataset.targetCategory = categoryName || state.selectedSubCategory || state.selectedCategory;
+}
+window.openWaitlistModal = openWaitlistModal;
+
+export function closeWaitlistModal() {
+    const overlay = document.getElementById('waitlistModalOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+window.closeWaitlistModal = closeWaitlistModal;
+
+export async function submitWaitlist() {
+    const overlay = document.getElementById('waitlistModalOverlay');
+    const input = document.getElementById('waitlistContact');
+    const err = document.getElementById('waitlistContactError');
+    const submitBtn = document.getElementById('submitWaitlistBtn');
+    if (!input || !submitBtn) return;
+
+    const contact = input.value.trim();
+    if (!contact || contact.length < 5) {
+        if (err) {
+            err.textContent = "Please enter a valid WhatsApp number or email address.";
+            err.style.display = 'block';
+        }
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "SAVING...";
+
+    try {
+        await ensureAuthSession();
+        const categoryName = overlay?.dataset.targetCategory || state.selectedSubCategory || state.selectedCategory || 'GENERAL';
+        const docData = {
+            categoryName: categoryName,
+            contact: contact,
+            userId: auth.currentUser ? auth.currentUser.uid : 'anonymous',
+            createdAt: serverTimestamp()
+        };
+
+        await addDoc(collection(db, "waitlist"), docData);
+        showToast("✦ You're on the waitlist! We'll notify you on arrival.", "success");
+        closeWaitlistModal();
+    } catch (error) {
+        console.error("Waitlist Submission Error:", error);
+        showToast(`Failed to join waitlist: ${error.message}`, "error");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "NOTIFY ME";
+    }
+}
+window.submitWaitlist = submitWaitlist;
+
 // --- RENDER PRODUCT GRID ---
 function renderCatalog() {
     const query = state.searchQuery.toLowerCase().trim();
@@ -587,6 +812,16 @@ function renderCatalog() {
         heroShowcase.style.display = (state.selectedSubCategory || filtered.length === 0) ? 'none' : 'block';
     }
 
+    // Toggle ArtClusive Atelier Banner: Show on For You / All when no subcategory selected
+    const artclusiveBanner = document.getElementById('artclusiveHomeBanner');
+    if (artclusiveBanner) {
+        const showBanner = !state.selectedSubCategory && (state.selectedCategory === 'FOR_YOU' || state.selectedCategory === 'ALL') && filtered.length > 0;
+        artclusiveBanner.style.display = showBanner ? 'block' : 'none';
+    }
+
+    // Render Curated Picks Rail
+    renderCuratedPicks();
+
     // Toggle Curated Collection Header: Hide if 0 items exist
     const collectionHeaderRow = document.querySelector('.collection-header-row');
     if (collectionHeaderRow) {
@@ -599,16 +834,42 @@ function renderCatalog() {
     }
 
     if (filtered.length === 0) {
+        const catName = state.selectedSubCategory || state.selectedCategory;
         elements.productGrid.innerHTML = `
-            <div class="coming-soon-card" style="grid-column: 1 / -1; text-align: center; padding: 70px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; margin: 20px 0;">
+            <div class="coming-soon-card" style="grid-column: 1 / -1; text-align: center; padding: 60px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; margin: 20px 0;">
                 <div style="font-size: 28px; color: var(--accent-gold); margin-bottom: 12px;">✦</div>
                 <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: var(--accent-gold); margin-bottom: 6px;">ARTPOURE ATELIER</div>
                 <h2 style="font-family: var(--font-cinzel); font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: 1.5px; margin-bottom: 10px;">COMING SOON</h2>
-                <p style="font-size: 13px; color: var(--text-secondary); max-width: 380px; margin: 0 auto; line-height: 1.6;">
-                    New handcrafted masterweaves and curated heirlooms are arriving shortly from our master artisans.
+                <p style="font-size: 13px; color: var(--text-secondary); max-width: 400px; margin: 0 auto 24px; line-height: 1.6;">
+                    We are currently curating handloom masterweaves and bespoke heirlooms for <strong>${catName.replace('-', ' ').toUpperCase()}</strong>.
                 </p>
+                <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 520px; margin: 0 auto;">
+                    <button class="empty-action-btn empty-btn-gold" id="btnEmptyWaitlist" data-category="${catName}" type="button">
+                        ✦ NOTIFY ME ON LAUNCH
+                    </button>
+                    <button class="empty-action-btn empty-btn-outline" id="btnEmptyConsult" type="button">
+                        BOOK CONSULTATION
+                    </button>
+                    <button class="empty-action-btn empty-btn-subtle" id="btnEmptyExplore" type="button">
+                        EXPLORE ALL COLLECTIONS
+                    </button>
+                </div>
             </div>
         `;
+        document.getElementById('btnEmptyWaitlist')?.addEventListener('click', (e) => {
+            const cat = e.currentTarget.dataset.category || state.selectedCategory;
+            openWaitlistModal(cat);
+        });
+        document.getElementById('btnEmptyConsult')?.addEventListener('click', () => {
+            if (elements.consultationOverlay) elements.consultationOverlay.style.display = 'flex';
+        });
+        document.getElementById('btnEmptyExplore')?.addEventListener('click', () => {
+            state.selectedCategory = 'FOR_YOU';
+            state.selectedSubCategory = null;
+            document.querySelectorAll('.category-chip').forEach(p => p.classList.toggle('active', p.dataset.category === 'FOR_YOU'));
+            renderSubCategories('FOR_YOU');
+            renderCatalog();
+        });
         return;
     }
 
@@ -1692,6 +1953,29 @@ function setupEventListeners() {
             }
         });
     }
+
+    // ArtClusive Home Banner Buttons (1:1 with Android HomeScreen)
+    document.getElementById('bannerVaultBtn')?.addEventListener('click', (e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        triggerStarburstTransition(rect, () => {
+            if (elements.artclusiveTab) elements.artclusiveTab.classList.add('active');
+            if (elements.collectionTab) elements.collectionTab.classList.remove('active');
+            if (elements.mainContent) elements.mainContent.style.display = 'none';
+            if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+            document.body.classList.add('artclusive-mode');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            renderVaultPieces();
+        });
+    });
+
+    document.getElementById('bannerCommissionBtn')?.addEventListener('click', () => {
+        if (elements.consultationOverlay) elements.consultationOverlay.style.display = 'flex';
+    });
+
+    // Waitlist Modal Actions
+    document.getElementById('closeWaitlistModalBtn')?.addEventListener('click', closeWaitlistModal);
+    document.getElementById('cancelWaitlistBtn')?.addEventListener('click', closeWaitlistModal);
+    document.getElementById('submitWaitlistBtn')?.addEventListener('click', submitWaitlist);
 }
 
 // --- PROFILE MODAL CONTROLLERS (Exposed globally for bulletproof invocation) ---
