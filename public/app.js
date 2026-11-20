@@ -2303,6 +2303,7 @@ function selectPaymentMethod(method) {
         if (elements.payOptionCod) elements.payOptionCod.classList.remove('active');
     }
     renderCheckoutSummary();
+    restorePlaceOrderBtn();
 }
 
 function restorePlaceOrderBtn(grandTotal) {
@@ -2315,7 +2316,11 @@ function restorePlaceOrderBtn(grandTotal) {
         const pricing = calculateClientPricing(state.cart, state.appliedPromoCode);
         const total = grandTotal !== undefined ? grandTotal : pricing.grandTotal;
         if (state.selectedPaymentMethod === 'COD') {
-            elements.placeOrderBtnText.textContent = `CONFIRM CASH ON DELIVERY (₹${total.toLocaleString('en-IN')})`;
+            if (pricing.codAdvanceInr > 0) {
+                elements.placeOrderBtnText.textContent = `PAY ADVANCE TOKEN ₹${pricing.codAdvanceInr.toLocaleString('en-IN')} & CONFIRM COD`;
+            } else {
+                elements.placeOrderBtnText.textContent = `CONFIRM CASH ON DELIVERY (₹${total.toLocaleString('en-IN')})`;
+            }
         } else {
             elements.placeOrderBtnText.textContent = `PAY ₹${total.toLocaleString('en-IN')} & CONFIRM ORDER`;
         }
@@ -2334,6 +2339,11 @@ function setPlaceOrderBtnLoading(text) {
 }
 
 function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverName, receiverPhone, addressObj, pricing) {
+    const isPartialCod = paymentMethod === 'PARTIAL_COD' || (pricing && pricing.paymentMode === 'PARTIAL_COD');
+    const isCod = isPartialCod || paymentMethod.includes('COD');
+    const advancePaid = (pricing && pricing.advancePaidInr !== undefined) ? pricing.advancePaidInr : (isPartialCod ? 299 : 0);
+    const balanceDue = (pricing && (pricing.balanceDueOnDeliveryInr !== undefined ? pricing.balanceDueOnDeliveryInr : pricing.codBalanceInr));
+
     const orderPayload = {
         orderId,
         items: state.cart.map(i => ({
@@ -2346,7 +2356,10 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
         })),
         pricing: pricing || {
             grandTotal,
-            promoCode: state.appliedPromoCode || null
+            promoCode: state.appliedPromoCode || null,
+            codAdvanceInr: isPartialCod ? advancePaid : 0,
+            codBalanceInr: isCod ? balanceDue : 0,
+            balanceDueOnDeliveryInr: isCod ? balanceDue : 0
         },
         shippingAddress: {
             receiverName,
@@ -2358,8 +2371,11 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
             city: addressObj.city,
             pinCode: addressObj.pinCode
         },
-        paymentMethod,
+        paymentMethod: isPartialCod ? 'PARTIAL_COD' : paymentMethod,
+        paymentStatus: isPartialCod ? 'PARTIAL_PAID' : (isCod ? 'PENDING_COD' : 'PAID'),
         status: "CONFIRMED",
+        advancePaidInr: isPartialCod ? advancePaid : (isCod ? 0 : grandTotal),
+        balanceDueOnDeliveryInr: isCod ? (balanceDue !== undefined ? balanceDue : 0) : 0,
         createdAt: new Date().toISOString()
     };
 
@@ -2370,8 +2386,8 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
     if (elements.orderSuccessId) {
         elements.orderSuccessId.textContent = `ORDER #${orderId}`;
     }
-    const balanceDue = (pricing && (pricing.balanceDueOnDeliveryInr !== undefined ? pricing.balanceDueOnDeliveryInr : pricing.codBalanceInr));
     if (elements.orderSuccessMeta) {
+        const methodLabel = isPartialCod ? 'Partial COD (Advance Token Paid)' : (isCod ? 'Cash on Delivery' : 'Prepaid Online');
         elements.orderSuccessMeta.innerHTML = `
             <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--accent-gold);">
                 DELIVERING TO: ${receiverName} (${receiverPhone})
@@ -2380,11 +2396,15 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
                 ${addressObj.fullDisplay}
             </div>
             <div style="margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--text-primary);">
-                TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${paymentMethod})
+                TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${methodLabel})
             </div>
-            ${balanceDue !== undefined && paymentMethod.includes('COD') ? `
+            ${isPartialCod ? `
+            <div style="margin-top: 4px; font-size: 12px; font-weight: 700; color: #43A047;">
+                ADVANCE TOKEN PAID: ₹${advancePaid.toLocaleString('en-IN')} (Confirmed via Razorpay)
+            </div>` : ''}
+            ${isCod && balanceDue !== undefined && balanceDue > 0 ? `
             <div style="margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--gold-light);">
-                BALANCE DUE ON DELIVERY: ₹${balanceDue.toLocaleString('en-IN')}
+                BALANCE DUE ON DELIVERY: ₹${balanceDue.toLocaleString('en-IN')} (Cash / UPI)
             </div>` : ''}
         `;
     }
@@ -2518,6 +2538,121 @@ async function validateAndPlaceOrder() {
 
     // If Cash on Delivery is selected
     if (state.selectedPaymentMethod === 'COD') {
+        if (clientPricing.codAdvanceInr > 0) {
+            // PARTIAL COD: Collect upfront token via Razorpay
+            if (typeof window.Razorpay !== 'function') {
+                alert("Razorpay Standard Checkout SDK is loading or blocked by an adblocker. Please disable your adblocker and refresh.");
+                return;
+            }
+
+            setPlaceOrderBtnLoading(`INITIALIZING ADVANCE TOKEN (₹${clientPricing.codAdvanceInr})...`);
+            try {
+                await ensureAuthSession();
+                const createOrderCallable = httpsCallable(functions, "createRazorpayOrder");
+                const orderRes = await createOrderCallable({
+                    items: state.cart.map(i => ({
+                        productId: i.product.id,
+                        quantity: i.quantity,
+                        variant: i.variant.colorName
+                    })),
+                    shippingAddress: {
+                        receiverName,
+                        receiverPhone,
+                        houseFlat,
+                        floor,
+                        street,
+                        area,
+                        city,
+                        pinCode
+                    },
+                    promoCode: state.appliedPromoCode || null,
+                    paymentMode: "PARTIAL_COD"
+                });
+
+                const { razorpayOrderId, amount, currency, firestoreOrderId, pricing, codAdvanceInr, codBalanceInr } = orderRes.data || {};
+                const verifiedTotal = (pricing && (pricing.grandTotalInr || pricing.grandTotal)) ? (pricing.grandTotalInr || pricing.grandTotal) : grandTotal;
+                const tokenPaid = codAdvanceInr !== undefined ? codAdvanceInr : clientPricing.codAdvanceInr;
+                const balanceDue = codBalanceInr !== undefined ? codBalanceInr : clientPricing.codBalanceInr;
+
+                const options = {
+                    key: RAZORPAY_KEY_ID,
+                    amount: amount,
+                    currency: currency || "INR",
+                    name: "Artpoure",
+                    description: `Partial COD Advance Token #${firestoreOrderId}`,
+                    order_id: razorpayOrderId,
+                    theme: {
+                        color: "#5C4033"
+                    },
+                    prefill: {
+                        name: receiverName,
+                        contact: receiverPhone,
+                        email: (auth.currentUser && auth.currentUser.email) || "patron@artpoure.in"
+                    },
+                    retry: {
+                        enabled: true,
+                        max_count: 2
+                    },
+                    handler: async function (response) {
+                        setPlaceOrderBtnLoading("VERIFYING ADVANCE TOKEN...");
+                        try {
+                            const verifyCallable = httpsCallable(functions, "verifyRazorpayPayment");
+                            const verifyRes = await verifyCallable({
+                                razorpayOrderId: response.razorpay_order_id,
+                                razorpayPaymentId: response.razorpay_payment_id,
+                                razorpaySignature: response.razorpay_signature,
+                                firestoreOrderId: firestoreOrderId
+                            });
+
+                            if (verifyRes.data && verifyRes.data.success) {
+                                handleOrderSuccessDisplay(
+                                    firestoreOrderId,
+                                    "PARTIAL_COD",
+                                    verifiedTotal,
+                                    receiverName,
+                                    receiverPhone,
+                                    updatedAddrObj,
+                                    {
+                                        ...pricing,
+                                        advancePaidInr: tokenPaid,
+                                        balanceDueOnDeliveryInr: balanceDue,
+                                        codBalanceInr: balanceDue
+                                    }
+                                );
+                            } else {
+                                alert("Advance token signature verification failed. Please contact support.");
+                                restorePlaceOrderBtn(verifiedTotal);
+                            }
+                        } catch (verifyErr) {
+                            console.error("Signature verification error:", verifyErr);
+                            alert("Advance payment received but verification timed out. Ref ID: " + response.razorpay_payment_id);
+                            restorePlaceOrderBtn(verifiedTotal);
+                        }
+                    },
+                    modal: {
+                        ondismiss: function () {
+                            console.log("Customer closed Razorpay modal for Partial COD.");
+                            restorePlaceOrderBtn(verifiedTotal);
+                        }
+                    }
+                };
+
+                const rzp = new window.Razorpay(options);
+                rzp.on("payment.failed", function (failResponse) {
+                    console.error("Razorpay token payment error:", failResponse.error);
+                    alert("Advance Payment Failed: " + (failResponse.error?.description || "Transaction declined."));
+                    restorePlaceOrderBtn(verifiedTotal);
+                });
+                rzp.open();
+            } catch (createErr) {
+                console.error("Order creation error:", createErr);
+                alert("Failed to initiate advance token checkout: " + (createErr.message || "Please check connection."));
+                restorePlaceOrderBtn(grandTotal);
+            }
+            return;
+        }
+
+        // Full COD without advance token fallback
         setPlaceOrderBtnLoading("CONFIRMING CASH ON DELIVERY...");
         try {
             await ensureAuthSession();
@@ -2543,7 +2678,7 @@ async function validateAndPlaceOrder() {
 
             const { firestoreOrderId, pricing } = codRes.data || {};
             const finalTotal = (pricing && (pricing.grandTotal || pricing.grandTotalInr)) ? (pricing.grandTotal || pricing.grandTotalInr) : grandTotal;
-            handleOrderSuccessDisplay(firestoreOrderId, "Insured COD", finalTotal, receiverName, receiverPhone, updatedAddrObj, pricing);
+            handleOrderSuccessDisplay(firestoreOrderId, "COD", finalTotal, receiverName, receiverPhone, updatedAddrObj, pricing);
         } catch (err) {
             console.error("COD order creation error:", err);
             alert(`Failed to place Cash on Delivery order: ${err.message || err}. Please try again.`);
@@ -2579,7 +2714,8 @@ async function validateAndPlaceOrder() {
                 city,
                 pinCode
             },
-            promoCode: state.appliedPromoCode || null
+            promoCode: state.appliedPromoCode || null,
+            paymentMode: "FULL_ONLINE"
         });
 
         const { razorpayOrderId, amount, currency, firestoreOrderId, pricing } = orderRes.data || {};
@@ -3300,19 +3436,27 @@ function renderOrdersList() {
     list.innerHTML = state.orders.map(order => {
         const formattedDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recent';
         const itemsSummary = (order.items || []).map(i => `${i.quantity}x ${i.title} (${i.variant || 'Standard'})`).join(', ');
-        const total = order.pricing ? order.pricing.grandTotal : 0;
+        const total = order.pricing ? (order.pricing.grandTotal || order.pricing.grandTotalInr) : (order.grandTotal || 0);
+        const isPartialCod = order.paymentMethod === 'PARTIAL_COD' || order.paymentStatus === 'PARTIAL_PAID';
+        const isCod = isPartialCod || (order.paymentMethod && order.paymentMethod.includes('COD'));
+        const balanceDue = order.balanceDueOnDeliveryInr !== undefined ? order.balanceDueOnDeliveryInr : (order.pricing && (order.pricing.balanceDueOnDeliveryInr !== undefined ? order.pricing.balanceDueOnDeliveryInr : order.pricing.codBalanceInr));
+        const advancePaid = order.advancePaidInr !== undefined ? order.advancePaidInr : (order.pricing && order.pricing.codAdvanceInr);
+
+        const methodBadge = isPartialCod ? `PARTIAL ADVANCE PAID (₹${advancePaid || 299})` : (order.paymentMethod || 'UPI');
+
         return `
             <div class="history-card">
                 <div class="history-card-top">
                     <span class="history-id">${order.orderId}</span>
-                    <span class="status-badge confirmed">${order.status || 'CONFIRMED'}</span>
+                    <span class="status-badge ${isPartialCod ? 'confirmed' : 'confirmed'}">${order.status || 'CONFIRMED'}</span>
                 </div>
                 <div class="history-card-date">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                    <span>${formattedDate} • <strong>₹${Number(total).toLocaleString('en-IN')}</strong> (${order.paymentMethod || 'UPI'})</span>
+                    <span>${formattedDate} • <strong>₹${Number(total).toLocaleString('en-IN')}</strong> • <span style="color: ${isPartialCod ? '#43A047' : 'inherit'}; font-weight: 600;">${methodBadge}</span></span>
                 </div>
                 <div class="history-card-detail">
                     <div><strong>Items:</strong> ${itemsSummary}</div>
+                    ${isCod && balanceDue ? `<div style="color: var(--accent-gold); font-weight: 600; margin-top: 2px;">Balance Due on Delivery: ₹${Number(balanceDue).toLocaleString('en-IN')}</div>` : ''}
                     ${order.shippingAddress ? `<div><strong>Shipped to:</strong> ${order.shippingAddress.receiverName}, ${order.shippingAddress.city} - ${order.shippingAddress.pinCode}</div>` : ''}
                 </div>
             </div>

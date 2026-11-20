@@ -186,6 +186,9 @@ exports.createRazorpayOrder = onCall(
 
         // Compute discount, shipping, and grand total via centralized pricing helper
         const pricing = calculateOrderPricing(subtotal, promoCode);
+        const paymentMode = data.paymentMode === "PARTIAL_COD" ? "PARTIAL_COD" : "FULL_ONLINE";
+        const isPartialCod = paymentMode === "PARTIAL_COD";
+        const chargeAmountInPaise = isPartialCod ? (pricing.codAdvanceInr * 100) : pricing.amountInPaise;
 
         const currentYear = new Date().getFullYear();
         const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -196,12 +199,13 @@ exports.createRazorpayOrder = onCall(
         let rzpOrder;
         try {
             rzpOrder = await razorpay.orders.create({
-                amount: pricing.amountInPaise,
+                amount: chargeAmountInPaise,
                 currency: "INR",
                 receipt: firestoreOrderId,
                 notes: {
                     userId: request.auth.uid,
                     firestoreOrderId: firestoreOrderId,
+                    paymentMode: paymentMode,
                     promoCode: pricing.promoCode || "NONE"
                 }
             });
@@ -228,8 +232,11 @@ exports.createRazorpayOrder = onCall(
                 pinCode: shippingAddress.pinCode || ""
             },
             status: "PENDING",
-            paymentStatus: "PENDING",
-            paymentMethod: "RAZORPAY",
+            paymentStatus: isPartialCod ? "PENDING_ADVANCE" : "PENDING",
+            paymentMethod: isPartialCod ? "PARTIAL_COD" : "RAZORPAY",
+            paymentMode: paymentMode,
+            advancePaidInr: isPartialCod ? pricing.codAdvanceInr : pricing.grandTotalInr,
+            balanceDueOnDeliveryInr: isPartialCod ? pricing.codBalanceInr : 0,
             createdAt: FieldValue.serverTimestamp()
         };
 
@@ -241,6 +248,10 @@ exports.createRazorpayOrder = onCall(
             currency: "INR",
             firestoreOrderId: firestoreOrderId,
             grandTotalInr: pricing.grandTotalInr,
+            codAdvanceInr: pricing.codAdvanceInr,
+            codBalanceInr: pricing.codBalanceInr,
+            balanceDueOnDeliveryInr: pricing.codBalanceInr,
+            paymentMode: paymentMode,
             pricing: pricing
         };
     }
@@ -287,15 +298,25 @@ exports.verifyRazorpayPayment = onCall(
             );
         }
 
-        // Update Firestore order status to CONFIRMED / PAID
+        // Update Firestore order status based on paymentMode
         const orderRef = db.collection("orders").doc(firestoreOrderId);
-        await orderRef.update({
+        const orderSnap = await orderRef.get();
+        const currentData = orderSnap.exists ? orderSnap.data() : {};
+        const isPartialCod = currentData.paymentMethod === "PARTIAL_COD" || currentData.paymentMode === "PARTIAL_COD";
+
+        const updateData = {
             status: "CONFIRMED",
-            paymentStatus: "PAID",
+            paymentStatus: isPartialCod ? "PARTIAL_PAID" : "PAID",
             razorpayPaymentId: razorpayPaymentId,
             razorpaySignature: razorpaySignature,
             paidAt: FieldValue.serverTimestamp()
-        });
+        };
+        if (isPartialCod) {
+            updateData.advancePaidInr = currentData.advancePaidInr !== undefined ? currentData.advancePaidInr : (currentData.pricing?.codAdvanceInr || 0);
+            updateData.balanceDueOnDeliveryInr = currentData.balanceDueOnDeliveryInr !== undefined ? currentData.balanceDueOnDeliveryInr : (currentData.pricing?.codBalanceInr || 0);
+        }
+
+        await orderRef.update(updateData);
 
         // Clear user cart in Firestore if authenticated
         if (request.auth && request.auth.uid) {
@@ -315,7 +336,14 @@ exports.verifyRazorpayPayment = onCall(
             success: true,
             orderId: firestoreOrderId,
             paymentId: razorpayPaymentId,
-            message: "Payment successfully verified and commission confirmed."
+            paymentStatus: isPartialCod ? "PARTIAL_PAID" : "PAID",
+            paymentMethod: isPartialCod ? "PARTIAL_COD" : "RAZORPAY",
+            advancePaidInr: isPartialCod ? (currentData.advancePaidInr || currentData.pricing?.codAdvanceInr || 0) : (currentData.pricing?.grandTotalInr || 0),
+            balanceDueOnDeliveryInr: isPartialCod ? (currentData.balanceDueOnDeliveryInr || currentData.pricing?.codBalanceInr || 0) : 0,
+            grandTotalInr: currentData.pricing?.grandTotalInr || currentData.grandTotal || 0,
+            message: isPartialCod
+                ? "Partial COD advance verified and order confirmed."
+                : "Payment successfully verified and commission confirmed."
         };
     }
 );
@@ -481,14 +509,16 @@ exports.razorpayWebhook = onRequest(
 
                     if (orderSnap && orderSnap.exists) {
                         const currentData = orderSnap.data();
-                        if (currentData.paymentStatus !== "PAID") {
+                        const isPartialCod = currentData.paymentMethod === "PARTIAL_COD" || currentData.paymentMode === "PARTIAL_COD";
+                        const targetStatus = isPartialCod ? "PARTIAL_PAID" : "PAID";
+                        if (currentData.paymentStatus !== targetStatus && currentData.paymentStatus !== "PAID" && currentData.paymentStatus !== "COLLECTED") {
                             await orderSnap.ref.update({
                                 status: "CONFIRMED",
-                                paymentStatus: "PAID",
+                                paymentStatus: targetStatus,
                                 razorpayPaymentId: rzpPaymentId || currentData.razorpayPaymentId || "webhook-confirmed",
                                 webhookConfirmedAt: FieldValue.serverTimestamp()
                             });
-                            console.log(`Order ${orderSnap.id} confirmed via webhook.`);
+                            console.log(`Order ${orderSnap.id} confirmed via webhook with paymentStatus ${targetStatus}.`);
                         }
                     }
                 } catch (updateErr) {
@@ -513,7 +543,7 @@ exports.api = onRequest(
         if (path === "/api/payments/create-order" || path === "/create-order") {
             if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
             try {
-                const { items, shippingAddress, promoCode } = req.body;
+                const { items, shippingAddress, promoCode, paymentMode } = req.body;
                 if (!Array.isArray(items) || items.length === 0) {
                     return res.status(400).json({ error: "Cart items are required" });
                 }
@@ -537,13 +567,20 @@ exports.api = onRequest(
                 }
 
                 const pricing = calculateOrderPricing(subtotal, promoCode);
+                const mode = paymentMode === "PARTIAL_COD" ? "PARTIAL_COD" : "FULL_ONLINE";
+                const isPartialCod = mode === "PARTIAL_COD";
+                const chargeAmountInPaise = isPartialCod ? (pricing.codAdvanceInr * 100) : pricing.amountInPaise;
 
                 const firestoreOrderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
                 const razorpay = getRazorpayClient();
                 const rzpOrder = await razorpay.orders.create({
-                    amount: pricing.amountInPaise,
+                    amount: chargeAmountInPaise,
                     currency: "INR",
-                    receipt: firestoreOrderId
+                    receipt: firestoreOrderId,
+                    notes: {
+                        paymentMode: mode,
+                        firestoreOrderId: firestoreOrderId
+                    }
                 });
 
                 await db.collection("orders").doc(firestoreOrderId).set({
@@ -553,8 +590,11 @@ exports.api = onRequest(
                     pricing: pricing,
                     shippingAddress: shippingAddress || {},
                     status: "PENDING",
-                    paymentStatus: "PENDING",
-                    paymentMethod: "RAZORPAY",
+                    paymentStatus: isPartialCod ? "PENDING_ADVANCE" : "PENDING",
+                    paymentMethod: isPartialCod ? "PARTIAL_COD" : "RAZORPAY",
+                    paymentMode: mode,
+                    advancePaidInr: isPartialCod ? pricing.codAdvanceInr : pricing.grandTotalInr,
+                    balanceDueOnDeliveryInr: isPartialCod ? pricing.codBalanceInr : 0,
                     createdAt: FieldValue.serverTimestamp()
                 });
 
@@ -564,6 +604,10 @@ exports.api = onRequest(
                     currency: "INR",
                     firestoreOrderId,
                     grandTotalInr: pricing.grandTotalInr,
+                    codAdvanceInr: pricing.codAdvanceInr,
+                    codBalanceInr: pricing.codBalanceInr,
+                    balanceDueOnDeliveryInr: pricing.codBalanceInr,
+                    paymentMode: mode,
                     pricing: pricing
                 });
             } catch (err) {
@@ -589,9 +633,13 @@ exports.api = onRequest(
                 }
 
                 if (firestoreOrderId) {
-                    await db.collection("orders").doc(firestoreOrderId).update({
+                    const orderRef = db.collection("orders").doc(firestoreOrderId);
+                    const orderSnap = await orderRef.get();
+                    const currentData = orderSnap.exists ? orderSnap.data() : {};
+                    const isPartialCod = currentData.paymentMethod === "PARTIAL_COD" || currentData.paymentMode === "PARTIAL_COD";
+                    await orderRef.update({
                         status: "CONFIRMED",
-                        paymentStatus: "PAID",
+                        paymentStatus: isPartialCod ? "PARTIAL_PAID" : "PAID",
                         razorpayPaymentId: razorpay_payment_id,
                         paidAt: FieldValue.serverTimestamp()
                     });
