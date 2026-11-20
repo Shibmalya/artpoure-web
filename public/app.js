@@ -706,9 +706,23 @@ function attachCardEventListeners() {
             if (isHandcrafted) {
                 const rect = card.getBoundingClientRect();
                 navigateToArtClusiveProduct(item, rect);
+            } else {
+                openEditorialPage(item);
             }
         });
     });
+
+    // Hero CTA button & Hero card click -> opens Full Editorial Page
+    const heroCtaBtn = document.getElementById('heroCtaBtn');
+    if (heroCtaBtn && !heroCtaBtn.dataset.bound) {
+        heroCtaBtn.dataset.bound = 'true';
+        heroCtaBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const pool = getHeroShowcasePool();
+            const product = pool[currentHeroIndex];
+            if (product) openEditorialPage(product);
+        });
+    }
 }
 
 // --- CART STATE MANAGEMENT ---
@@ -2342,67 +2356,108 @@ function renderVaultPieces() {
 
 // --- ARTCLUSIVE BESPOKE SAREE DETAIL MODAL ---
 let currentArtclusiveProduct = null;
-let currentArtclusiveVariantIdx = 0;
+// --- FULL EDITORIAL PRODUCT DETAIL PAGE (Matching Jetpack Compose ProductDetailScreen) ---
+let currentEditorialProduct = null;
+let currentEditorialVariantIdx = 0;
 
-function openArtClusiveSareeModal(product) {
+function openEditorialPage(product) {
     if (!product) return;
-    currentArtclusiveProduct = product;
-    currentArtclusiveVariantIdx = 0;
-    const overlay = document.getElementById('artclusiveSareeModalOverlay');
+    currentEditorialProduct = product;
+    currentEditorialVariantIdx = 0;
+    const overlay = document.getElementById('editorialDetailPage');
     if (!overlay) return;
 
-    updateArtClusiveModalContent();
-    overlay.classList.add('open');
+    updateEditorialPageContent();
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
 }
 
-function closeArtClusiveSareeModal() {
-    const overlay = document.getElementById('artclusiveSareeModalOverlay');
-    if (overlay) overlay.classList.remove('open');
-    currentArtclusiveProduct = null;
+function closeEditorialPage() {
+    const overlay = document.getElementById('editorialDetailPage');
+    if (overlay) overlay.style.display = 'none';
+    currentEditorialProduct = null;
+    document.body.style.overflow = '';
 }
 
-function updateArtClusiveModalContent() {
-    if (!currentArtclusiveProduct) return;
-    const product = currentArtclusiveProduct;
+function updateEditorialPageContent() {
+    if (!currentEditorialProduct) return;
+    const product = currentEditorialProduct;
     const variants = product.variants || [];
-    const variant = variants[currentArtclusiveVariantIdx] || variants[0] || {};
+    const variant = variants[currentEditorialVariantIdx] || variants[0] || {};
 
-    const img = document.getElementById('artclusiveModalImg');
-    const title = document.getElementById('artclusiveModalTitle');
-    const sub = document.getElementById('artclusiveModalSub');
-    const price = document.getElementById('artclusiveModalPrice');
-    const badge = document.getElementById('artclusiveModalBadge');
-    const spec = document.getElementById('artclusiveModalSpec');
-    const desc = document.getElementById('artclusiveModalDesc');
-    const swatches = document.getElementById('artclusiveModalSwatches');
+    const navTitle = document.getElementById('editorialNavTitle');
+    const heroBox = document.getElementById('editorialHeroBox');
+    const heroImg = document.getElementById('editorialHeroImg');
+    const heroBadge = document.getElementById('editorialHeroBadge');
+    const spec = document.getElementById('editorialTopLeftSpec');
+    const title = document.getElementById('editorialTitle');
+    const sub = document.getElementById('editorialSub');
+    const price = document.getElementById('editorialPrice');
+    const trustBadge = document.getElementById('editorialTrustBadge');
+    const desc = document.getElementById('editorialDesc');
+    const care = document.getElementById('editorialCare');
+    const swatches = document.getElementById('editorialSwatches');
+    const dots = document.getElementById('editorialGalleryDots');
+    const wishlistBtn = document.getElementById('editorialWishlistBtn');
+    const cartBadge = document.getElementById('editorialCartBadge');
 
-    if (img) img.src = variant.imageUrl || product.imageUrl || '';
-    if (title) title.textContent = product.editorialTitle || '';
-    if (sub) sub.textContent = product.fullName || '';
-    if (price) price.textContent = `₹${Number(product.priceInr || 0).toLocaleString('en-IN')}`;
-    if (badge) {
-        badge.textContent = product.trustBadgeText || 'Silk Mark Certified';
-        badge.style.display = product.trustBadgeText ? 'inline-block' : 'none';
+    if (navTitle) navTitle.textContent = product.fullName || product.editorialTitle || 'ARTPOURE EDITORIAL';
+    if (heroBox) heroBox.style.backgroundColor = variant.canvasHex || '#2A1810';
+    if (heroImg) {
+        heroImg.src = variant.imageUrl || product.imageUrl || '';
+        heroImg.alt = product.fullName || product.editorialTitle || '';
+    }
+    if (heroBadge) {
+        heroBadge.textContent = product.category === 'CUSTOM' ? 'BESPOKE COMMISSION' : 'HAUTE COUTURE';
     }
     if (spec) {
         spec.textContent = product.topLeftSpec || '100% PURE SILK';
         spec.style.display = product.topLeftSpec ? 'block' : 'none';
     }
-    if (desc) desc.textContent = product.description || product.details || '';
+    if (title) title.textContent = product.editorialTitle || '';
+    if (sub) sub.textContent = product.fullName || '';
+    if (price) price.textContent = `₹${Number(product.priceInr || 0).toLocaleString('en-IN')}`;
+    if (trustBadge) {
+        trustBadge.textContent = product.trustBadgeText || 'Silk Mark Certified';
+    }
+    if (desc) desc.textContent = product.description || product.details || 'Handcrafted masterweave with certified pure silk and authentic silver zari.';
+    if (care) care.textContent = product.careInstructions || 'Dry Clean Only. Preserve in pure cotton or muslin wrap. Avoid direct sunlight.';
 
+    if (wishlistBtn) {
+        wishlistBtn.classList.toggle('wishlisted', state.wishlist.has(product.id));
+    }
+    if (cartBadge) {
+        const totalCart = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+        cartBadge.textContent = totalCart;
+        cartBadge.style.display = totalCart > 0 ? 'flex' : 'none';
+    }
+
+    // Multi-angle variant gallery dots
+    const images = (variant.allImages && variant.allImages.length > 0) ? variant.allImages : [variant.imageUrl || product.imageUrl];
+    if (dots) {
+        if (images.length > 1) {
+            dots.innerHTML = images.map((_, i) => `<span class="editorial-dot ${i === 0 ? 'active' : ''}"></span>`).join('');
+            dots.style.display = 'flex';
+        } else {
+            dots.innerHTML = '';
+            dots.style.display = 'none';
+        }
+    }
+
+    // Color Swatches
     if (swatches) {
         if (variants.length > 1) {
             swatches.innerHTML = variants.map((v, idx) => `
-                <div class="swatch-dot ${idx === currentArtclusiveVariantIdx ? 'active' : ''}"
-                     style="background-color: ${v.swatchHex || '#1A1A1A'}; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: ${idx === currentArtclusiveVariantIdx ? '2px solid var(--accent-gold)' : '1px solid var(--border)'};"
-                     data-idx="${idx}" title="${v.colorName || ''}"></div>
+                <div class="editorial-swatch-dot ${idx === currentEditorialVariantIdx ? 'active' : ''}" data-idx="${idx}" title="${v.colorName || ''}">
+                    <div class="editorial-swatch-inner" style="background-color: ${v.swatchHex || '#1A1A1A'};"></div>
+                </div>
             `).join('');
 
-            swatches.querySelectorAll('.swatch-dot').forEach(dot => {
+            swatches.querySelectorAll('.editorial-swatch-dot').forEach(dot => {
                 dot.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    currentArtclusiveVariantIdx = parseInt(dot.dataset.idx, 10);
-                    updateArtClusiveModalContent();
+                    currentEditorialVariantIdx = parseInt(dot.dataset.idx, 10);
+                    updateEditorialPageContent();
                 });
             });
             swatches.style.display = 'flex';
@@ -2413,38 +2468,89 @@ function updateArtClusiveModalContent() {
     }
 }
 
-// Setup ArtClusive Saree Detail Modal Buttons
-function setupArtClusiveModalEvents() {
-    const closeBtn = document.getElementById('closeArtclusiveSareeBtn');
-    if (closeBtn) closeBtn.addEventListener('click', closeArtClusiveSareeModal);
+// Setup Editorial Page Action Deck Events
+function setupEditorialPageEvents() {
+    const closeBtn = document.getElementById('closeEditorialBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeEditorialPage);
 
-    const overlay = document.getElementById('artclusiveSareeModalOverlay');
-    if (overlay) {
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) closeArtClusiveSareeModal();
+    const cartBtn = document.getElementById('editorialCartBtn');
+    if (cartBtn) {
+        cartBtn.addEventListener('click', () => {
+            closeEditorialPage();
+            openCartDrawer();
         });
     }
 
-    const reserveBtn = document.getElementById('artclusiveModalReserveBtn');
-    if (reserveBtn) {
-        reserveBtn.addEventListener('click', () => {
-            if (currentArtclusiveProduct) {
-                addToCart(currentArtclusiveProduct.id);
-                closeArtClusiveSareeModal();
+    const wishlistBtn = document.getElementById('editorialWishlistBtn');
+    if (wishlistBtn) {
+        wishlistBtn.addEventListener('click', () => {
+            if (!currentEditorialProduct) return;
+            const id = currentEditorialProduct.id;
+            if (state.wishlist.has(id)) {
+                state.wishlist.delete(id);
+                wishlistBtn.classList.remove('wishlisted');
+            } else {
+                state.wishlist.add(id);
+                wishlistBtn.classList.add('wishlisted');
             }
+            localStorage.setItem('artpoure_wishlist', JSON.stringify([...state.wishlist]));
+            updateBadges();
+            renderCatalog();
         });
     }
 
-    const consultBtn = document.getElementById('artclusiveModalConsultBtn');
+    // 1. Consultation Action Button
+    const consultBtn = document.getElementById('editorialConsultBtn');
     if (consultBtn) {
         consultBtn.addEventListener('click', () => {
-            const prodName = currentArtclusiveProduct ? currentArtclusiveProduct.fullName : '';
-            closeArtClusiveSareeModal();
+            const prodName = currentEditorialProduct ? currentEditorialProduct.fullName : '';
+            closeEditorialPage();
             const weaveInput = document.getElementById('consultWeave');
             if (weaveInput && prodName) weaveInput.value = prodName;
             if (elements.consultationOverlay) elements.consultationOverlay.classList.add('open');
         });
     }
+
+    // 2. Add to Bag Button
+    const addBagBtn = document.getElementById('editorialAddBagBtn');
+    if (addBagBtn) {
+        addBagBtn.addEventListener('click', () => {
+            if (currentEditorialProduct) {
+                addToCart(currentEditorialProduct.id);
+                const cartBadge = document.getElementById('editorialCartBadge');
+                if (cartBadge) {
+                    const totalCart = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+                    cartBadge.textContent = totalCart;
+                    cartBadge.style.display = totalCart > 0 ? 'flex' : 'none';
+                }
+            }
+        });
+    }
+
+    // 3. Buy Now Button (Directly opens checkout)
+    const buyNowBtn = document.getElementById('editorialBuyNowBtn');
+    if (buyNowBtn) {
+        buyNowBtn.addEventListener('click', () => {
+            if (currentEditorialProduct) {
+                addToCart(currentEditorialProduct.id);
+                closeEditorialPage();
+                openCheckoutPage();
+            }
+        });
+    }
+}
+
+// Backward compatibility helper
+function openArtClusiveSareeModal(product) {
+    openEditorialPage(product);
+}
+
+function closeArtClusiveSareeModal() {
+    closeEditorialPage();
+}
+
+function setupArtClusiveModalEvents() {
+    setupEditorialPageEvents();
 }
 
 function navigateToArtClusiveProduct(product, rect) {
@@ -2463,9 +2569,9 @@ function navigateToArtClusiveProduct(product, rect) {
         renderVaultPieces();
         window.scrollTo({ top: 0, behavior: 'smooth' });
 
-        // Open the saree detail dialog directly
+        // Open the full editorial page directly (zero popup)
         setTimeout(() => {
-            openArtClusiveSareeModal(product);
+            openEditorialPage(product);
         }, 120);
     });
 }
