@@ -298,6 +298,8 @@ const elements = {
     summaryDiscount: document.getElementById('summaryDiscount'),
     summaryShipping: document.getElementById('summaryShipping'),
     summaryGrandTotal: document.getElementById('summaryGrandTotal'),
+    summaryCodRow: document.getElementById('summaryCodRow'),
+    summaryCodBalance: document.getElementById('summaryCodBalance'),
     placeOrderBtn: document.getElementById('placeOrderBtn'),
     placeOrderBtnText: document.getElementById('placeOrderBtnText'),
     orderSuccessModal: document.getElementById('orderSuccessModal'),
@@ -1888,11 +1890,38 @@ function clearCheckoutValidationErrors() {
     });
 }
 
-function renderCheckoutSummary() {
-    const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
-    const discount = state.appliedPromoCode === 'FIRST10' ? Math.round(subtotal * 0.10) : 0;
-    const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
+// ─────────────────────────────────────────────────────────────────────────────
+// Centralized Pricing & Shipping Rules (1:1 with Server & Android)
+// ─────────────────────────────────────────────────────────────────────────────
+const PRICING_CONFIG = {
+    freeShippingThreshold: 2999,
+    standardShippingFee: 149,
+    codTokenAmount: 299
+};
+
+function calculateClientPricing(cartItems, promoCode = state.appliedPromoCode) {
+    const subtotal = cartItems.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
+    const isPromoValid = (promoCode || '').trim().toUpperCase() === 'FIRST10';
+    const discount = isPromoValid ? Math.round(subtotal * 0.10) : 0;
+    const shipping = (subtotal >= PRICING_CONFIG.freeShippingThreshold || subtotal === 0) ? 0 : PRICING_CONFIG.standardShippingFee;
     const grandTotal = Math.max(0, subtotal - discount + shipping);
+    const codAdvance = grandTotal > 0 ? Math.min(PRICING_CONFIG.codTokenAmount, grandTotal) : 0;
+    const codBalance = Math.max(0, grandTotal - codAdvance);
+
+    return {
+        subtotal,
+        discount,
+        shipping,
+        grandTotal,
+        codAdvance,
+        codBalance,
+        isFreeShipping: shipping === 0 && subtotal > 0
+    };
+}
+
+function renderCheckoutSummary() {
+    const pricing = calculateClientPricing(state.cart, state.appliedPromoCode);
+    const isCod = state.selectedPaymentMethod === 'COD';
 
     if (elements.checkoutItemPreviews) {
         if (state.cart.length === 0) {
@@ -1913,29 +1942,44 @@ function renderCheckoutSummary() {
     }
 
     if (elements.summarySubtotal) {
-        elements.summarySubtotal.textContent = `₹${subtotal.toLocaleString('en-IN')}`;
+        elements.summarySubtotal.textContent = `₹${pricing.subtotal.toLocaleString('en-IN')}`;
     }
 
     if (elements.summaryDiscountRow) {
-        if (discount > 0) {
+        if (pricing.discount > 0) {
             elements.summaryDiscountRow.style.display = 'flex';
             if (elements.summaryPromoLabel) elements.summaryPromoLabel.textContent = state.appliedPromoCode;
-            if (elements.summaryDiscount) elements.summaryDiscount.textContent = `-₹${discount.toLocaleString('en-IN')}`;
+            if (elements.summaryDiscount) elements.summaryDiscount.textContent = `-₹${pricing.discount.toLocaleString('en-IN')}`;
         } else {
             elements.summaryDiscountRow.style.display = 'none';
         }
     }
 
     if (elements.summaryShipping) {
-        elements.summaryShipping.textContent = shipping === 0 ? 'FREE' : `₹${shipping}`;
+        elements.summaryShipping.textContent = pricing.shipping === 0 ? 'FREE' : `₹${pricing.shipping}`;
     }
 
     if (elements.summaryGrandTotal) {
-        elements.summaryGrandTotal.textContent = `₹${grandTotal.toLocaleString('en-IN')}`;
+        elements.summaryGrandTotal.textContent = `₹${pricing.grandTotal.toLocaleString('en-IN')}`;
+    }
+
+    if (elements.summaryCodRow) {
+        if (isCod && pricing.grandTotal > 0) {
+            elements.summaryCodRow.style.display = 'flex';
+            if (elements.summaryCodBalance) {
+                elements.summaryCodBalance.textContent = `₹${pricing.codBalance.toLocaleString('en-IN')}`;
+            }
+        } else {
+            elements.summaryCodRow.style.display = 'none';
+        }
     }
 
     if (elements.placeOrderBtnText) {
-        elements.placeOrderBtnText.textContent = `PAY ₹${grandTotal.toLocaleString('en-IN')} & CONFIRM ORDER`;
+        if (isCod) {
+            elements.placeOrderBtnText.textContent = `CONFIRM CASH ON DELIVERY (₹${pricing.grandTotal.toLocaleString('en-IN')})`;
+        } else {
+            elements.placeOrderBtnText.textContent = `PAY ₹${pricing.grandTotal.toLocaleString('en-IN')} & CONFIRM ORDER`;
+        }
     }
 }
 
@@ -1974,6 +2018,7 @@ function selectPaymentMethod(method) {
         if (elements.payOptionUpi) elements.payOptionUpi.classList.add('active');
         if (elements.payOptionCod) elements.payOptionCod.classList.remove('active');
     }
+    renderCheckoutSummary();
 }
 
 function restorePlaceOrderBtn(grandTotal) {
@@ -1983,8 +2028,13 @@ function restorePlaceOrderBtn(grandTotal) {
         elements.placeOrderBtn.style.cursor = 'pointer';
     }
     if (elements.placeOrderBtnText) {
-        const total = grandTotal !== undefined ? grandTotal : state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
-        elements.placeOrderBtnText.textContent = `PAY ₹${total.toLocaleString('en-IN')} & CONFIRM ORDER`;
+        const pricing = calculateClientPricing(state.cart, state.appliedPromoCode);
+        const total = grandTotal !== undefined ? grandTotal : pricing.grandTotal;
+        if (state.selectedPaymentMethod === 'COD') {
+            elements.placeOrderBtnText.textContent = `CONFIRM CASH ON DELIVERY (₹${total.toLocaleString('en-IN')})`;
+        } else {
+            elements.placeOrderBtnText.textContent = `PAY ₹${total.toLocaleString('en-IN')} & CONFIRM ORDER`;
+        }
     }
 }
 
@@ -1999,7 +2049,7 @@ function setPlaceOrderBtnLoading(text) {
     }
 }
 
-function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverName, receiverPhone, addressObj) {
+function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverName, receiverPhone, addressObj, pricing) {
     const orderPayload = {
         orderId,
         items: state.cart.map(i => ({
@@ -2010,7 +2060,7 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
             priceInr: i.product.priceInr,
             totalInr: i.product.priceInr * i.quantity
         })),
-        pricing: {
+        pricing: pricing || {
             grandTotal,
             promoCode: state.appliedPromoCode || null
         },
@@ -2036,6 +2086,7 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
     if (elements.orderSuccessId) {
         elements.orderSuccessId.textContent = `ORDER #${orderId}`;
     }
+    const balanceDue = (pricing && (pricing.balanceDueOnDeliveryInr !== undefined ? pricing.balanceDueOnDeliveryInr : pricing.codBalanceInr));
     if (elements.orderSuccessMeta) {
         elements.orderSuccessMeta.innerHTML = `
             <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--accent-gold);">
@@ -2047,6 +2098,10 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
             <div style="margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--text-primary);">
                 TOTAL AMOUNT: ₹${grandTotal.toLocaleString('en-IN')} (${paymentMethod})
             </div>
+            ${balanceDue !== undefined && paymentMethod.includes('COD') ? `
+            <div style="margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--gold-light);">
+                BALANCE DUE ON DELIVERY: ₹${balanceDue.toLocaleString('en-IN')}
+            </div>` : ''}
         `;
     }
     if (elements.orderSuccessModal) {
@@ -2171,10 +2226,11 @@ async function validateAndPlaceOrder() {
     localStorage.setItem('artpoure_delivery_address', JSON.stringify(updatedAddrObj));
     updateCurrentAddressDisplay();
 
-    const subtotal = state.cart.reduce((sum, item) => sum + (item.product.priceInr * item.quantity), 0);
-    const discount = state.appliedPromoCode === 'FIRST10' ? Math.round(subtotal * 0.10) : 0;
-    const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
-    const grandTotal = Math.max(0, subtotal - discount + shipping);
+    const clientPricing = calculateClientPricing(state.cart, state.appliedPromoCode);
+    const subtotal = clientPricing.subtotal;
+    const discount = clientPricing.discount;
+    const shipping = clientPricing.shipping;
+    const grandTotal = clientPricing.grandTotal;
 
     // If Cash on Delivery is selected
     if (state.selectedPaymentMethod === 'COD') {
@@ -2202,12 +2258,12 @@ async function validateAndPlaceOrder() {
             });
 
             const { firestoreOrderId, pricing } = codRes.data || {};
-            const finalTotal = (pricing && pricing.grandTotal) ? pricing.grandTotal : grandTotal;
-            handleOrderSuccessDisplay(firestoreOrderId, "Insured COD", finalTotal, receiverName, receiverPhone, updatedAddrObj);
+            const finalTotal = (pricing && (pricing.grandTotal || pricing.grandTotalInr)) ? (pricing.grandTotal || pricing.grandTotalInr) : grandTotal;
+            handleOrderSuccessDisplay(firestoreOrderId, "Insured COD", finalTotal, receiverName, receiverPhone, updatedAddrObj, pricing);
         } catch (err) {
             console.error("COD order creation error:", err);
             alert(`Failed to place Cash on Delivery order: ${err.message || err}. Please try again.`);
-            updatePlaceOrderBtnText(grandTotal);
+            restorePlaceOrderBtn(grandTotal);
         }
         return;
     }
@@ -2242,7 +2298,8 @@ async function validateAndPlaceOrder() {
             promoCode: state.appliedPromoCode || null
         });
 
-        const { razorpayOrderId, amount, currency, firestoreOrderId } = orderRes.data;
+        const { razorpayOrderId, amount, currency, firestoreOrderId, pricing } = orderRes.data || {};
+        const verifiedTotal = (pricing && (pricing.grandTotalInr || pricing.grandTotal)) ? (pricing.grandTotalInr || pricing.grandTotal) : grandTotal;
 
         const options = {
             key: RAZORPAY_KEY_ID,
@@ -2278,25 +2335,26 @@ async function validateAndPlaceOrder() {
                         handleOrderSuccessDisplay(
                             firestoreOrderId,
                             `Razorpay Live (${response.razorpay_payment_id})`,
-                            grandTotal,
+                            verifiedTotal,
                             receiverName,
                             receiverPhone,
-                            updatedAddrObj
+                            updatedAddrObj,
+                            pricing
                         );
                     } else {
                         alert("Payment signature verification failed. Please contact support.");
-                        restorePlaceOrderBtn(grandTotal);
+                        restorePlaceOrderBtn(verifiedTotal);
                     }
                 } catch (verifyErr) {
                     console.error("Signature verification error:", verifyErr);
                     alert("Payment received but signature verification timed out. Ref ID: " + response.razorpay_payment_id);
-                    restorePlaceOrderBtn(grandTotal);
+                    restorePlaceOrderBtn(verifiedTotal);
                 }
             },
             modal: {
                 ondismiss: function () {
                     console.log("Customer closed Razorpay modal.");
-                    restorePlaceOrderBtn(grandTotal);
+                    restorePlaceOrderBtn(verifiedTotal);
                 }
             }
         };
@@ -2305,7 +2363,7 @@ async function validateAndPlaceOrder() {
         rzp.on("payment.failed", function (failResponse) {
             console.error("Razorpay payment error:", failResponse.error);
             alert("Payment Failed: " + (failResponse.error?.description || "Transaction declined by bank/network."));
-            restorePlaceOrderBtn(grandTotal);
+            restorePlaceOrderBtn(verifiedTotal);
         });
         rzp.open();
 

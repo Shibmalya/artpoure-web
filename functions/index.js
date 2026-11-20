@@ -61,6 +61,63 @@ async function getAuthoritativeProduct(productId) {
     return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Centralized Order Pricing & Merchandising Rules
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_PRICING_CONFIG = {
+    freeShippingThresholdInr: 2999,
+    standardShippingFeeInr: 149,
+    codTokenAmountInr: 299
+};
+
+/**
+ * Authoritative server-side pricing calculator.
+ * Computes subtotal, promo discount, insured express shipping, grand total,
+ * and Cash on Delivery (COD) advance token / balance due.
+ */
+function calculateOrderPricing(subtotal, promoCode = "", options = {}) {
+    const config = { ...DEFAULT_PRICING_CONFIG, ...options };
+    const cleanSubtotal = Math.max(0, Math.round(Number(subtotal) || 0));
+
+    // Promo code validation: FIRST10 gives 10% off (rounded)
+    const cleanPromo = (promoCode || "").trim().toUpperCase();
+    let discountInr = 0;
+    if (cleanPromo === "FIRST10") {
+        discountInr = Math.round(cleanSubtotal * 0.10);
+    }
+
+    // Shipping rules: Free shipping at or above threshold (₹2999), else flat shipping fee (₹149)
+    let shippingInr = 0;
+    if (cleanSubtotal > 0) {
+        shippingInr = cleanSubtotal >= config.freeShippingThresholdInr ? 0 : config.standardShippingFeeInr;
+    }
+
+    const grandTotalInr = Math.max(0, cleanSubtotal - discountInr + shippingInr);
+    const amountInPaise = Math.round(grandTotalInr * 100);
+
+    // COD advance/token calculation (upfront token capped at grand total, remaining balance due on delivery)
+    const codAdvanceInr = grandTotalInr > 0 ? Math.min(config.codTokenAmountInr, grandTotalInr) : 0;
+    const codBalanceInr = Math.max(0, grandTotalInr - codAdvanceInr);
+
+    return {
+        subtotal: cleanSubtotal,
+        subtotalInr: cleanSubtotal,
+        discount: discountInr,
+        discountInr: discountInr,
+        shipping: shippingInr,
+        shippingInr: shippingInr,
+        freeShippingThresholdInr: config.freeShippingThresholdInr,
+        standardShippingFeeInr: config.standardShippingFeeInr,
+        grandTotal: grandTotalInr,
+        grandTotalInr: grandTotalInr,
+        amountInPaise: amountInPaise,
+        promoCode: discountInr > 0 ? cleanPromo : null,
+        codAdvanceInr: codAdvanceInr,
+        codBalanceInr: codBalanceInr,
+        balanceDueOnDeliveryInr: codBalanceInr
+    };
+}
+
 /**
  * Helper to get Razorpay client instance using live key ID and secret.
  */
@@ -127,11 +184,8 @@ exports.createRazorpayOrder = onCall(
             });
         }
 
-        // Compute discount, shipping, and grand total
-        const discount = promoCode === "FIRST10" ? Math.round(subtotal * 0.10) : 0;
-        const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
-        const grandTotalInr = Math.max(0, subtotal - discount + shipping);
-        const amountInPaise = Math.round(grandTotalInr * 100);
+        // Compute discount, shipping, and grand total via centralized pricing helper
+        const pricing = calculateOrderPricing(subtotal, promoCode);
 
         const currentYear = new Date().getFullYear();
         const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -142,13 +196,13 @@ exports.createRazorpayOrder = onCall(
         let rzpOrder;
         try {
             rzpOrder = await razorpay.orders.create({
-                amount: amountInPaise,
+                amount: pricing.amountInPaise,
                 currency: "INR",
                 receipt: firestoreOrderId,
                 notes: {
                     userId: request.auth.uid,
                     firestoreOrderId: firestoreOrderId,
-                    promoCode: promoCode || "NONE"
+                    promoCode: pricing.promoCode || "NONE"
                 }
             });
         } catch (err) {
@@ -162,14 +216,7 @@ exports.createRazorpayOrder = onCall(
             userId: request.auth ? request.auth.uid : null,
             razorpayOrderId: rzpOrder.id,
             items: verifiedItems,
-            pricing: {
-                subtotalInr: subtotal,
-                discountInr: discount,
-                shippingInr: shipping,
-                grandTotalInr: grandTotalInr,
-                amountInPaise: amountInPaise,
-                promoCode: promoCode || null
-            },
+            pricing: pricing,
             shippingAddress: {
                 receiverName: shippingAddress.receiverName || "Customer",
                 receiverPhone: shippingAddress.receiverPhone || "",
@@ -193,7 +240,8 @@ exports.createRazorpayOrder = onCall(
             amount: rzpOrder.amount,
             currency: "INR",
             firestoreOrderId: firestoreOrderId,
-            grandTotalInr: grandTotalInr
+            grandTotalInr: pricing.grandTotalInr,
+            pricing: pricing
         };
     }
 );
@@ -316,28 +364,12 @@ exports.createCodOrder = onCall(
             });
         }
 
-        // Compute discount, shipping, and grand total
-        const discount = promoCode === "FIRST10" ? Math.round(subtotal * 0.10) : 0;
-        const shipping = (subtotal >= 25000 || subtotal === 0) ? 0 : 500;
-        const grandTotalInr = Math.max(0, subtotal - discount + shipping);
-        const amountInPaise = Math.round(grandTotalInr * 100);
+        // Compute discount, shipping, and grand total via centralized pricing helper
+        const pricing = calculateOrderPricing(subtotal, promoCode);
 
         const currentYear = new Date().getFullYear();
         const randomNum = Math.floor(1000 + Math.random() * 9000);
         const firestoreOrderId = `ART-${currentYear}-${randomNum}`;
-
-        const pricing = {
-            subtotal: subtotal,
-            subtotalInr: subtotal,
-            discount: discount,
-            discountInr: discount,
-            shipping: shipping,
-            shippingInr: shipping,
-            grandTotal: grandTotalInr,
-            grandTotalInr: grandTotalInr,
-            amountInPaise: amountInPaise,
-            promoCode: promoCode || null
-        };
 
         const orderDoc = {
             orderId: firestoreOrderId,
@@ -379,7 +411,11 @@ exports.createCodOrder = onCall(
         return {
             success: true,
             firestoreOrderId: firestoreOrderId,
-            pricing: pricing
+            pricing: pricing,
+            grandTotalInr: pricing.grandTotalInr,
+            codAdvanceInr: pricing.codAdvanceInr,
+            codBalanceInr: pricing.codBalanceInr,
+            balanceDueOnDeliveryInr: pricing.balanceDueOnDeliveryInr
         };
     }
 );
@@ -500,15 +536,12 @@ exports.api = onRequest(
                     });
                 }
 
-                const discount = (promoCode || "").toUpperCase() === "FIRST10" ? Math.round(subtotal * 0.10) : 0;
-                const shipping = subtotal >= 25000 ? 0 : 500;
-                const grandTotal = Math.max(0, subtotal - discount + shipping);
-                const amountInPaise = Math.round(grandTotal * 100);
+                const pricing = calculateOrderPricing(subtotal, promoCode);
 
                 const firestoreOrderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
                 const razorpay = getRazorpayClient();
                 const rzpOrder = await razorpay.orders.create({
-                    amount: amountInPaise,
+                    amount: pricing.amountInPaise,
                     currency: "INR",
                     receipt: firestoreOrderId
                 });
@@ -517,7 +550,7 @@ exports.api = onRequest(
                     orderId: firestoreOrderId,
                     razorpayOrderId: rzpOrder.id,
                     items: verifiedItems,
-                    pricing: { subtotal, discount, shipping, grandTotal, amountInPaise },
+                    pricing: pricing,
                     shippingAddress: shippingAddress || {},
                     status: "PENDING",
                     paymentStatus: "PENDING",
@@ -529,7 +562,9 @@ exports.api = onRequest(
                     orderId: rzpOrder.id,
                     amount: rzpOrder.amount,
                     currency: "INR",
-                    firestoreOrderId
+                    firestoreOrderId,
+                    grandTotalInr: pricing.grandTotalInr,
+                    pricing: pricing
                 });
             } catch (err) {
                 console.error("API create-order error:", err);
