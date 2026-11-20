@@ -2750,14 +2750,21 @@ async function validateAndPlaceOrder() {
                         ondismiss: function () {
                             console.log("Customer closed Razorpay modal for Partial COD.");
                             restorePlaceOrderBtn(verifiedTotal);
+                            alert("Payment was cancelled. Your bag is saved—you can retry checkout anytime.");
                         }
                     }
                 };
 
                 const rzp = new window.Razorpay(options);
                 rzp.on("payment.failed", function (failResponse) {
-                    console.error("Razorpay token payment error:", failResponse.error);
-                    alert("Advance Payment Failed: " + (failResponse.error?.description || "Transaction declined."));
+                    console.error("Razorpay token payment error:", failResponse?.error);
+                    const rawDesc = failResponse?.error?.description;
+                    const cleanDesc = (typeof rawDesc === 'string' &&
+                        rawDesc.trim() !== '' &&
+                        rawDesc.trim().toLowerCase() !== 'undefined' &&
+                        rawDesc.trim().toLowerCase() !== 'null'
+                    ) ? rawDesc.trim() : "Payment was cancelled. Your bag is saved—you can retry checkout anytime.";
+                    alert("Advance Payment Status: " + cleanDesc);
                     restorePlaceOrderBtn(verifiedTotal);
                 });
                 rzp.open();
@@ -2892,14 +2899,21 @@ async function validateAndPlaceOrder() {
                 ondismiss: function () {
                     console.log("Customer closed Razorpay modal.");
                     restorePlaceOrderBtn(verifiedTotal);
+                    alert("Payment was cancelled. Your bag is saved—you can retry checkout anytime.");
                 }
             }
         };
 
         const rzp = new window.Razorpay(options);
         rzp.on("payment.failed", function (failResponse) {
-            console.error("Razorpay payment error:", failResponse.error);
-            alert("Payment Failed: " + (failResponse.error?.description || "Transaction declined by bank/network."));
+            console.error("Razorpay payment error:", failResponse?.error);
+            const rawDesc = failResponse?.error?.description;
+            const cleanDesc = (typeof rawDesc === 'string' &&
+                rawDesc.trim() !== '' &&
+                rawDesc.trim().toLowerCase() !== 'undefined' &&
+                rawDesc.trim().toLowerCase() !== 'null'
+            ) ? rawDesc.trim() : "Payment was cancelled. Your bag is saved—you can retry checkout anytime.";
+            alert("Payment Status: " + cleanDesc);
             restorePlaceOrderBtn(verifiedTotal);
         });
         rzp.open();
