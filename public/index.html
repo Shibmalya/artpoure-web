@@ -261,6 +261,32 @@
         </div>
     </div>
 
+    <!-- ArtClusive Bespoke Haute Couture Saree Detail Modal -->
+    <div class="consultation-modal-overlay" id="artclusiveSareeModalOverlay">
+        <div class="consultation-modal" style="max-width: 480px; padding: 0; overflow: hidden; border: 1.5px solid var(--accent-gold); border-radius: 20px;">
+            <div style="position: relative; width: 100%; height: 260px; background: #2A2825;">
+                <img id="artclusiveModalImg" src="" alt="Saree" style="width: 100%; height: 100%; object-fit: cover;">
+                <div style="position: absolute; top: 12px; left: 12px; background: var(--accent-gold); color: #141312; font-size: 9px; font-weight: 800; padding: 4px 8px; border-radius: 4px; letter-spacing: 0.8px;">
+                    HAUTE COUTURE
+                </div>
+                <button class="icon-btn" id="closeArtclusiveSareeBtn" style="position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.6); color: #fff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;">✕</button>
+                <div id="artclusiveModalSpec" style="position: absolute; bottom: 0; left: 0; background: rgba(0,0,0,0.7); color: var(--accent-gold); font-size: 9px; font-weight: 700; padding: 4px 8px; border-top-right-radius: 8px;"></div>
+            </div>
+            <div style="padding: 20px;">
+                <h3 id="artclusiveModalTitle" style="font-family: var(--font-cinzel); font-size: 18px; margin: 0 0 4px 0; color: var(--text-primary); letter-spacing: 1px;"></h3>
+                <p id="artclusiveModalSub" style="font-size: 13px; color: var(--text-secondary); margin: 0 0 10px 0;"></p>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <span id="artclusiveModalPrice" style="font-size: 18px; font-weight: 700; color: var(--accent-gold);"></span>
+                    <span id="artclusiveModalBadge" style="background: rgba(184, 134, 11, 0.15); border: 1px solid var(--accent-gold); color: var(--accent-gold); font-size: 10px; padding: 3px 8px; border-radius: 12px;"></span>
+                </div>
+                <div id="artclusiveModalSwatches" style="display: flex; gap: 8px; margin-bottom: 12px;"></div>
+                <p id="artclusiveModalDesc" style="font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin: 0 0 14px 0;"></p>
+                <button id="artclusiveModalReserveBtn" class="consultation-submit-btn" style="width: 100%; margin-bottom: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.8px;">RESERVE IN BAG</button>
+                <button id="artclusiveModalConsultBtn" class="quick-date-pill" style="width: 100%; border: 1px solid var(--accent-gold); color: var(--accent-gold); font-size: 11px; font-weight: 600; padding: 10px; border-radius: 10px; cursor: pointer;">BOOK ATELIER CONSULTATION</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modern Floating Pill Bottom Navigation Panel (3 Tabs: COLLECTION • ARTCLUSIVE • BAG) -->
     <div class="bottom-nav-container">
         <div class="bottom-nav-pill" id="bottomNavPill">

@@ -290,7 +290,15 @@ function renderProductsGrid() {
     const cat = state.productFilterCategory;
 
     const filtered = state.products.filter(p => {
-        const matchesCategory = (cat === 'ALL') || (p.category && p.category.toUpperCase() === cat);
+        let matchesCategory = false;
+        if (cat === 'ALL') {
+            matchesCategory = true;
+        } else if (cat === 'NEW_ARRIVALS') {
+            matchesCategory = !!(p.inNewArrivals || p.isNewArrival);
+        } else {
+            matchesCategory = (p.category && p.category.toUpperCase() === cat);
+        }
+
         const matchesSearch = !queryStr ||
             (p.fullName && p.fullName.toLowerCase().includes(queryStr)) ||
             (p.editorialTitle && p.editorialTitle.toLowerCase().includes(queryStr)) ||
@@ -310,6 +318,7 @@ function renderProductsGrid() {
         const thumbnail = prod.imageUrl || firstVariant.imageUrl || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80';
         const variantsList = prod.variants || [];
         const formattedPrice = Number(prod.priceInr || 0).toLocaleString('en-IN');
+        const isArrival = !!(prod.inNewArrivals || prod.isNewArrival);
 
         const variantDots = variantsList.map(v => {
             const swatch = v.swatchHex || '#1A1A1A';
@@ -321,7 +330,7 @@ function renderProductsGrid() {
                 <div class="card-image-wrap">
                     <img src="${thumbnail}" alt="${prod.fullName || prod.id}" class="card-product-img" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80'">
                     <span class="card-category-badge">${prod.category || 'HEIRLOOM'}</span>
-                    ${(prod.inNewArrivals || prod.isNewArrival) ? '<span class="card-category-badge" style="top: 36px; background: rgba(184, 134, 11, 0.95); color: #fff;">✦ NEW ARRIVAL</span>' : ''}
+                    ${isArrival ? '<span class="card-category-badge" style="top: 36px; background: rgba(184, 134, 11, 0.95); color: #fff;">✦ NEW ARRIVAL</span>' : ''}
                     <span class="card-price-badge">₹${formattedPrice}</span>
                 </div>
                 <div class="card-body">
@@ -331,9 +340,12 @@ function renderProductsGrid() {
                         ${variantDots}
                         <span class="variant-count-text">${variantsList.length} color${variantsList.length === 1 ? '' : 's'}</span>
                     </div>
-                    <div class="card-actions-bar">
-                        <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit Heirloom</button>
-                        <button class="btn-card-action danger delete-prod-btn" data-id="${prod.id}">✕ Delete</button>
+                    <div class="card-actions-bar" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit</button>
+                        <button class="btn-card-action toggle-arrival-btn ${isArrival ? 'active' : ''}" data-id="${prod.id}" style="${isArrival ? 'background: #B8860B; color: #fff; font-weight: 600;' : 'border-color: #B8860B; color: #5C4033;'}">
+                            ${isArrival ? '✓ In New Arrivals' : '+ New Arrival'}
+                        </button>
+                        <button class="btn-card-action danger delete-prod-btn" data-id="${prod.id}">✕</button>
                     </div>
                 </div>
             </div>
@@ -343,6 +355,32 @@ function renderProductsGrid() {
     // Attach card action listeners
     el.productsGrid.querySelectorAll('.edit-prod-btn').forEach(btn => {
         btn.addEventListener('click', () => editProduct(btn.dataset.id));
+    });
+    el.productsGrid.querySelectorAll('.toggle-arrival-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.id;
+            const prod = state.products.find(p => p.id === id);
+            if (!prod) return;
+            const newStatus = !(prod.inNewArrivals || prod.isNewArrival);
+            btn.disabled = true;
+            btn.textContent = 'Updating...';
+            try {
+                await updateDoc(doc(db, "products", id), {
+                    inNewArrivals: newStatus,
+                    isNewArrival: newStatus,
+                    updatedAt: serverTimestamp()
+                });
+                prod.inNewArrivals = newStatus;
+                prod.isNewArrival = newStatus;
+                showToast(`"${prod.fullName || id}" ${newStatus ? 'added to' : 'removed from'} New Arrivals!`, "success");
+                renderProductsGrid();
+            } catch (err) {
+                console.error("Error updating New Arrivals status:", err);
+                showToast(`Failed to update New Arrivals: ${err.message}`, "error");
+                btn.disabled = false;
+            }
+        });
     });
     el.productsGrid.querySelectorAll('.delete-prod-btn').forEach(btn => {
         btn.addEventListener('click', () => confirmDeleteProduct(btn.dataset.id));
@@ -587,22 +625,6 @@ el.addVariantBtn.addEventListener('click', () => {
     });
 });
 
-// Toggle Handprinted New Arrivals Showcase checkbox visibility
-function updateNewArrivalsOptionVisibility() {
-    const cat = document.getElementById('prodCategory').value;
-    const row = document.getElementById('newArrivalsOptionRow');
-    const check = document.getElementById('prodInNewArrivals');
-    if (row && check) {
-        if (cat === 'CUSTOM') {
-            row.style.display = 'block';
-        } else {
-            row.style.display = 'none';
-            check.checked = false;
-        }
-    }
-}
-document.getElementById('prodCategory').addEventListener('change', updateNewArrivalsOptionVisibility);
-
 function initNewProductForm() {
     state.editingProductId = null;
     el.productEditForm.reset();
@@ -610,7 +632,6 @@ function initNewProductForm() {
     document.getElementById('prodId').dataset.autoSlugified = 'false';
     const newArrivalsCheck = document.getElementById('prodInNewArrivals');
     if (newArrivalsCheck) newArrivalsCheck.checked = false;
-    updateNewArrivalsOptionVisibility();
     el.variantsContainer.innerHTML = '';
     // Default first variant
     createVariantCard({
@@ -640,7 +661,6 @@ function editProduct(productId) {
     if (newArrivalsCheck) {
         newArrivalsCheck.checked = !!(prod.inNewArrivals || prod.isNewArrival);
     }
-    updateNewArrivalsOptionVisibility();
 
     document.getElementById('prodPriceInr').value = prod.priceInr || '';
     document.getElementById('prodAvailableOptions').value = Array.isArray(prod.availableOptions) ? prod.availableOptions.join(', ') : (prod.availableOptions || '');
@@ -771,9 +791,7 @@ el.productEditForm.addEventListener('submit', async e => {
             ? availableOptionsRaw.split(',').map(s => s.trim()).filter(Boolean)
             : ['Free Size'];
 
-        const inNewArrivals = (category === 'CUSTOM')
-            ? (document.getElementById('prodInNewArrivals')?.checked || false)
-            : false;
+        const inNewArrivals = !!(document.getElementById('prodInNewArrivals')?.checked);
 
         const productDoc = {
             id: prodId,
@@ -781,6 +799,7 @@ el.productEditForm.addEventListener('submit', async e => {
             fullName: fullName,
             category: category,
             inNewArrivals: inNewArrivals,
+            isNewArrival: inNewArrivals,
             priceInr: priceInr,
             availableOptions: availableOptions,
             topLeftSpec: topLeftSpec,

@@ -384,6 +384,7 @@ async function init() {
     renderSubCategories(state.selectedCategory);
     renderCatalog();
     renderVaultPieces();
+    setupArtClusiveModalEvents();
     renderAppointmentsList();
     renderOrdersList();
     updateBadges();
@@ -683,6 +684,31 @@ function attachCardEventListeners() {
             addToCart(id);
         });
     });
+
+    // Product Card Click: if handcrafted/handprinted saree, trigger Starburst into ArtClusive and open saree modal
+    document.querySelectorAll('.product-card').forEach(card => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.swatch-dot') || e.target.closest('.wishlist-btn') || e.target.closest('.quick-add-btn')) {
+                return;
+            }
+            const id = card.dataset.productId;
+            const item = state.products.find(p => p.id === id);
+            if (!item) return;
+
+            const isHandcrafted = item.category === 'CUSTOM' ||
+                item.category === 'HAND_PRINTED' ||
+                item.category === 'HAND_PAINTED' ||
+                (item.fullName && (item.fullName.toLowerCase().includes('hand-paint') || item.fullName.toLowerCase().includes('hand-print') || item.fullName.toLowerCase().includes('handcrafted') || item.fullName.toLowerCase().includes('hand-craft') || item.fullName.toLowerCase().includes('handloom'))) ||
+                (item.editorialTitle && item.editorialTitle.toLowerCase().includes('hand')) ||
+                (item.description && (item.description.toLowerCase().includes('hand-painted') || item.description.toLowerCase().includes('hand-printed') || item.description.toLowerCase().includes('handcrafted')));
+
+            if (isHandcrafted) {
+                const rect = card.getBoundingClientRect();
+                navigateToArtClusiveProduct(item, rect);
+            }
+        });
+    });
 }
 
 // --- CART STATE MANAGEMENT ---
@@ -820,6 +846,26 @@ function setupHeroShowcase() {
 
     showHeroIndex(currentHeroIndex);
     startHeroCycle();
+
+    heroCard.style.cursor = 'pointer';
+    heroCard.onclick = (e) => {
+        if (e.target.closest('.hero-indicator-dot')) return;
+        const currentPool = getHeroShowcasePool();
+        const currentProd = currentPool[currentHeroIndex];
+        if (!currentProd) return;
+
+        const isHandcrafted = currentProd.category === 'CUSTOM' ||
+            currentProd.category === 'HAND_PRINTED' ||
+            currentProd.category === 'HAND_PAINTED' ||
+            (currentProd.fullName && (currentProd.fullName.toLowerCase().includes('hand-paint') || currentProd.fullName.toLowerCase().includes('hand-print') || currentProd.fullName.toLowerCase().includes('handcrafted') || currentProd.fullName.toLowerCase().includes('hand-craft') || currentProd.fullName.toLowerCase().includes('handloom'))) ||
+            (currentProd.editorialTitle && currentProd.editorialTitle.toLowerCase().includes('hand')) ||
+            (currentProd.description && (currentProd.description.toLowerCase().includes('hand-painted') || currentProd.description.toLowerCase().includes('hand-printed') || currentProd.description.toLowerCase().includes('handcrafted')));
+
+        if (isHandcrafted) {
+            const rect = heroCard.getBoundingClientRect();
+            navigateToArtClusiveProduct(currentProd, rect);
+        }
+    };
 }
 
 function showHeroIndex(index) {
@@ -849,18 +895,6 @@ function showHeroIndex(index) {
     if (heroModelImg) {
         heroModelImg.src = variant.imageUrl || product.imageUrl || '';
         heroModelImg.alt = product.fullName || '';
-    }
-
-    // Update indicator dots
-    document.querySelectorAll('.hero-indicator-dot').forEach((dot, i) => {
-        dot.classList.toggle('active', i === currentHeroIndex);
-    });
-}
-        heroPageCounter.textContent = `${curr} / ${total}`;
-    }
-    if (heroModelImg) {
-        heroModelImg.src = variant.imageUrl || product.imageUrl;
-        heroModelImg.alt = product.fullName;
     }
 
     // Update indicator dots
@@ -2266,20 +2300,21 @@ function renderVaultPieces() {
         index === self.findIndex(t => t.id === item.id)
     );
     elements.vaultGrid.innerHTML = vaultItems.map(item => {
-        const variant = item.variants[0];
+        const variant = (item.variants && item.variants[0]) || {};
+        const price = Number(item.priceInr || 0).toLocaleString('en-IN');
         return `
             <div class="vault-card">
                 <div class="vault-card-img-wrap" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <span class="vault-tag">VAULT PIECE</span>
-                    <img src="${variant.imageUrl || item.imageUrl}" class="vault-card-img" alt="${item.fullName}">
+                    <img src="${variant.imageUrl || item.imageUrl || ''}" class="vault-card-img" alt="${item.fullName || ''}">
                 </div>
                 <div class="vault-card-info">
                     <div>
-                        <h3 class="vault-card-title">${item.editorialTitle}</h3>
-                        <p class="vault-card-sub">${item.fullName}</p>
+                        <h3 class="vault-card-title">${item.editorialTitle || ''}</h3>
+                        <p class="vault-card-sub">${item.fullName || ''}</p>
                     </div>
                     <div class="vault-card-bottom">
-                        <span class="vault-card-price">₹${item.priceInr.toLocaleString('en-IN')}</span>
+                        <span class="vault-card-price">₹${price}</span>
                         <button class="vault-reserve-btn" data-reserve-id="${item.id}">RESERVE</button>
                     </div>
                 </div>
@@ -2293,6 +2328,145 @@ function renderVaultPieces() {
             const id = btn.dataset.reserveId;
             addToCart(id);
         });
+    });
+
+    elements.vaultGrid.querySelectorAll('.vault-card').forEach((card, idx) => {
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.vault-reserve-btn')) return;
+            const item = vaultItems[idx];
+            if (item) openArtClusiveSareeModal(item);
+        });
+    });
+}
+
+// --- ARTCLUSIVE BESPOKE SAREE DETAIL MODAL ---
+let currentArtclusiveProduct = null;
+let currentArtclusiveVariantIdx = 0;
+
+function openArtClusiveSareeModal(product) {
+    if (!product) return;
+    currentArtclusiveProduct = product;
+    currentArtclusiveVariantIdx = 0;
+    const overlay = document.getElementById('artclusiveSareeModalOverlay');
+    if (!overlay) return;
+
+    updateArtClusiveModalContent();
+    overlay.classList.add('open');
+}
+
+function closeArtClusiveSareeModal() {
+    const overlay = document.getElementById('artclusiveSareeModalOverlay');
+    if (overlay) overlay.classList.remove('open');
+    currentArtclusiveProduct = null;
+}
+
+function updateArtClusiveModalContent() {
+    if (!currentArtclusiveProduct) return;
+    const product = currentArtclusiveProduct;
+    const variants = product.variants || [];
+    const variant = variants[currentArtclusiveVariantIdx] || variants[0] || {};
+
+    const img = document.getElementById('artclusiveModalImg');
+    const title = document.getElementById('artclusiveModalTitle');
+    const sub = document.getElementById('artclusiveModalSub');
+    const price = document.getElementById('artclusiveModalPrice');
+    const badge = document.getElementById('artclusiveModalBadge');
+    const spec = document.getElementById('artclusiveModalSpec');
+    const desc = document.getElementById('artclusiveModalDesc');
+    const swatches = document.getElementById('artclusiveModalSwatches');
+
+    if (img) img.src = variant.imageUrl || product.imageUrl || '';
+    if (title) title.textContent = product.editorialTitle || '';
+    if (sub) sub.textContent = product.fullName || '';
+    if (price) price.textContent = `₹${Number(product.priceInr || 0).toLocaleString('en-IN')}`;
+    if (badge) {
+        badge.textContent = product.trustBadgeText || 'Silk Mark Certified';
+        badge.style.display = product.trustBadgeText ? 'inline-block' : 'none';
+    }
+    if (spec) {
+        spec.textContent = product.topLeftSpec || '100% PURE SILK';
+        spec.style.display = product.topLeftSpec ? 'block' : 'none';
+    }
+    if (desc) desc.textContent = product.description || product.details || '';
+
+    if (swatches) {
+        if (variants.length > 1) {
+            swatches.innerHTML = variants.map((v, idx) => `
+                <div class="swatch-dot ${idx === currentArtclusiveVariantIdx ? 'active' : ''}"
+                     style="background-color: ${v.swatchHex || '#1A1A1A'}; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: ${idx === currentArtclusiveVariantIdx ? '2px solid var(--accent-gold)' : '1px solid var(--border)'};"
+                     data-idx="${idx}" title="${v.colorName || ''}"></div>
+            `).join('');
+
+            swatches.querySelectorAll('.swatch-dot').forEach(dot => {
+                dot.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    currentArtclusiveVariantIdx = parseInt(dot.dataset.idx, 10);
+                    updateArtClusiveModalContent();
+                });
+            });
+            swatches.style.display = 'flex';
+        } else {
+            swatches.innerHTML = '';
+            swatches.style.display = 'none';
+        }
+    }
+}
+
+// Setup ArtClusive Saree Detail Modal Buttons
+function setupArtClusiveModalEvents() {
+    const closeBtn = document.getElementById('closeArtclusiveSareeBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeArtClusiveSareeModal);
+
+    const overlay = document.getElementById('artclusiveSareeModalOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeArtClusiveSareeModal();
+        });
+    }
+
+    const reserveBtn = document.getElementById('artclusiveModalReserveBtn');
+    if (reserveBtn) {
+        reserveBtn.addEventListener('click', () => {
+            if (currentArtclusiveProduct) {
+                addToCart(currentArtclusiveProduct.id);
+                closeArtClusiveSareeModal();
+            }
+        });
+    }
+
+    const consultBtn = document.getElementById('artclusiveModalConsultBtn');
+    if (consultBtn) {
+        consultBtn.addEventListener('click', () => {
+            const prodName = currentArtclusiveProduct ? currentArtclusiveProduct.fullName : '';
+            closeArtClusiveSareeModal();
+            const weaveInput = document.getElementById('consultWeave');
+            if (weaveInput && prodName) weaveInput.value = prodName;
+            if (elements.consultationOverlay) elements.consultationOverlay.classList.add('open');
+        });
+    }
+}
+
+function navigateToArtClusiveProduct(product, rect) {
+    triggerStarburstTransition(rect, () => {
+        // Peak supernova burst callback (reveal ArtClusive page)
+        if (elements.artclusiveTab) elements.artclusiveTab.classList.add('active');
+        if (elements.collectionTab) elements.collectionTab.classList.remove('active');
+        if (elements.mainContent) elements.mainContent.style.display = 'none';
+        if (elements.artclusivePage) elements.artclusivePage.style.display = 'block';
+        if (elements.checkoutPage) elements.checkoutPage.style.display = 'none';
+        document.body.classList.add('artclusive-mode');
+        document.body.classList.remove('checkout-mode');
+        if (elements.brandTitle) elements.brandTitle.textContent = 'ARTCLUSIVE';
+        if (elements.brandTagline) elements.brandTagline.textContent = 'HAUTE ATELIER & BESPOKE VAULT';
+        updateAmbientVideo();
+        renderVaultPieces();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // Open the saree detail dialog directly
+        setTimeout(() => {
+            openArtClusiveSareeModal(product);
+        }, 120);
     });
 }
 
