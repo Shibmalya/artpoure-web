@@ -356,7 +356,7 @@ body {
 }
 
 .categories-layer.drawer-open {
-    padding-bottom: 0;
+    padding-bottom: 8px;
 }
 
 .categories-layer.drawer-open .category-chip.active {
