@@ -3763,3 +3763,288 @@ body.artclusive-mode .brand-title {
     box-shadow: 0 4px 12px rgba(184, 134, 11, 0.4);
 }
 
+/* ==========================================================================
+   LEGAL & POLICY PAGES, EDITORIAL FOOTER & PARITY PLACEMENTS
+   ========================================================================== */
+
+/* Policy Page Layout */
+.policy-page-body {
+    background: var(--canvas-bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+.policy-header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.policy-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.policy-back-link:hover {
+    color: var(--accent-gold);
+}
+
+.policy-brand {
+    font-family: var(--font-cinzel);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--text-primary);
+}
+
+.policy-container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 40px 24px 60px;
+}
+
+.policy-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: var(--accent-gold);
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin-bottom: 14px;
+}
+
+.policy-title {
+    font-family: var(--font-serif);
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+}
+
+.policy-effective {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+    letter-spacing: 0.3px;
+}
+
+.policy-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 22px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+}
+
+.policy-section h2 {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    letter-spacing: 0.5px;
+}
+
+.policy-section p {
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.policy-section p:last-child {
+    margin-bottom: 0;
+}
+
+.policy-section ul {
+    margin: 10px 0 14px 22px;
+}
+
+.policy-section li {
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.policy-highlight-box {
+    background: rgba(92, 64, 51, 0.07);
+    border: 1px dashed var(--accent-gold);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 16px 0;
+}
+
+.policy-page-footer {
+    text-align: center;
+    padding: 32px 20px 48px;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+    background: var(--surface);
+}
+
+.policy-footer-links {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.policy-footer-links a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.policy-footer-links a:hover {
+    color: var(--accent-gold);
+}
+
+.policy-footer-links span {
+    color: var(--border);
+}
+
+.policy-page-footer p {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+/* Homepage Editorial Footer */
+.editorial-footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 40px 24px 125px; /* ~125px clearance for bottom floating navigation capsule */
+    margin-top: 48px;
+    text-align: center;
+    position: relative;
+    z-index: 5;
+}
+
+.footer-container {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.footer-brand-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.footer-brand {
+    font-family: var(--font-cinzel);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--text-primary);
+}
+
+.footer-tagline {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+    font-weight: 500;
+}
+
+.footer-links-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px 14px;
+}
+
+.footer-link {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.footer-link:hover {
+    color: var(--accent-gold);
+}
+
+.footer-sep {
+    color: var(--border);
+    font-size: 12px;
+}
+
+.footer-copyright {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.75;
+}
+
+/* Profile Modal Policy Links */
+.profile-link-item {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    align-items: center;
+}
+
+/* Checkout Micro-Caption */
+.checkout-policy-caption {
+    font-size: 11px;
+    text-align: center;
+    color: var(--text-secondary);
+    margin-top: 14px;
+    line-height: 1.5;
+}
+
+.checkout-policy-caption a {
+    color: var(--accent-gold);
+    text-decoration: underline;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.checkout-policy-caption a:hover {
+    color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+    .policy-container {
+        padding: 24px 16px 40px;
+    }
+    .policy-title {
+        font-size: 26px;
+    }
+    .policy-section {
+        padding: 18px 16px;
+    }
+    .editorial-footer {
+        padding: 32px 16px 120px;
+    }
+}
+
