@@ -68,9 +68,69 @@ async function getAuthoritativeProduct(productId) {
 }
 
 /**
- * Atomically locks stock for 1-of-1 ArtClusive / CUSTOM pieces upon payment confirmation
+ * Collision-proof Order ID generation combining current year, base-36 timestamp,
+ * and high-entropy cryptographic randomness (e.g., ART-2026-L5K8J9-8F2B).
+ */
+function generateCollisionFreeOrderId() {
+    const currentYear = new Date().getFullYear();
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
+    return `ART-${currentYear}-${timestamp}-${randomSuffix}`;
+}
+
+/**
+ * Helper to release reservations acquired during order creation if the transaction fails midway.
+ */
+async function rollbackAcquiredReservations(acquiredList, userId) {
+    if (!Array.isArray(acquiredList) || acquiredList.length === 0 || !userId) return;
+    for (const item of acquiredList) {
+        try {
+            const pRef = db.collection("products").doc(item.productId);
+            await db.runTransaction(async (tx) => {
+                const snap = await tx.get(pRef);
+                if (!snap.exists) return;
+                const data = snap.data() || {};
+                const variants = Array.isArray(data.variants) ? [...data.variants] : [];
+                const now = Date.now();
+                if (variants.length > 0) {
+                    let idx = -1;
+                    if (item.variantId) {
+                        idx = variants.findIndex(v => v && v.id === item.variantId);
+                    }
+                    if (idx === -1) idx = 0;
+                    if (variants[idx]) {
+                        const v = variants[idx];
+                        const updatedRes = (v.reservations || []).filter(r => r && r.userId !== userId && r.expiresAt > now);
+                        const updatedV = { ...v, reservations: updatedRes };
+                        if (item.isCustom && updatedV.reservedBy === userId) {
+                            delete updatedV.reservedUntil;
+                            delete updatedV.reservedBy;
+                        }
+                        variants[idx] = updatedV;
+                        tx.update(pRef, { variants: variants, updatedAt: FieldValue.serverTimestamp() });
+                    }
+                } else {
+                    const updatedRes = (data.reservations || []).filter(r => r && r.userId !== userId && r.expiresAt > now);
+                    const updateData = { reservations: updatedRes, updatedAt: FieldValue.serverTimestamp() };
+                    if (item.isCustom && data.reservedBy === userId) {
+                        updateData.reservedUntil = FieldValue.delete();
+                        updateData.reservedBy = FieldValue.delete();
+                    }
+                    tx.update(pRef, updateData);
+                }
+            });
+        } catch (e) {
+            console.warn(`Rollback reservation warning for product ${item.productId}:`, e.message);
+        }
+    }
+}
+
+/**
+ * Atomically locks stock and decrements inventory upon payment confirmation
  * using Firestore transactions to prevent simultaneous checkout race conditions.
- * Prevents double-execution between verifyRazorpayPayment and razorpayWebhook.
+ * - For 1-of-1 ArtClusive / CUSTOM pieces: marks inStock: false and stockCount: 0.
+ * - For catalog products: decrements stockCount by ordered quantity and marks inStock: false if stock reaches 0.
+ * Prevents double-execution between verifyRazorpayPayment, razorpayWebhook, and COD confirmation.
  */
 async function lockArtClusiveStockForOrder(orderRef, orderData) {
     if (!orderRef) return;
@@ -120,18 +180,13 @@ async function lockArtClusiveStockForOrder(orderRef, orderData) {
                 const rawCategory = (pData.category || "").toString().trim().toUpperCase();
                 const fullName = (pData.fullName || pData.editorialTitle || pData.title || "").toString();
 
-                // Strict rule: Only auto-lock if product category is "CUSTOM" (or hand-painted 1-of-1 pieces).
-                // Do NOT lock normal catalog sarees (e.g. Category.SAREES).
                 const isArtClusive = rawCategory === "CUSTOM" ||
                     rawCategory.includes("HAND") ||
                     fullName.toLowerCase().includes("hand-paint") ||
                     fullName.toLowerCase().includes("hand-print");
 
-                if (!isArtClusive) {
-                    continue;
-                }
-
                 const item = entry.item;
+                const qty = Math.max(1, Number(item.quantity || 1));
                 const variants = Array.isArray(pData.variants) ? [...pData.variants] : [];
 
                 if (variants.length > 0) {
@@ -151,43 +206,96 @@ async function lockArtClusiveStockForOrder(orderRef, orderData) {
 
                     if (matchedIdx >= 0 && variants[matchedIdx]) {
                         const targetVariant = variants[matchedIdx];
+                        const currentStock = typeof targetVariant.stockCount === "number"
+                            ? targetVariant.stockCount
+                            : (targetVariant.inStock === false ? 0 : 1);
 
-                        // If already claimed by another order and this order was not already stockLocked
-                        if (targetVariant.inStock === false && currentOrder.stockLocked !== true) {
-                            hasConflict = true;
-                            conflictItemTitle = `${pData.title || item.title || entry.ref.id} (${targetVariant.colorName || 'Default'})`;
-                            break;
+                        if (isArtClusive) {
+                            // If already claimed by another order and this order was not already stockLocked
+                            if (targetVariant.inStock === false && currentOrder.stockLocked !== true) {
+                                hasConflict = true;
+                                conflictItemTitle = `${pData.title || item.title || entry.ref.id} (${targetVariant.colorName || 'Default'})`;
+                                break;
+                            }
+
+                            const updatedVariant = { ...targetVariant, inStock: false, stockCount: 0 };
+                            delete updatedVariant.reservedUntil;
+                            delete updatedVariant.reservedBy;
+                            if (Array.isArray(updatedVariant.reservations)) {
+                                updatedVariant.reservations = updatedVariant.reservations.filter(r => r && r.userId !== currentOrder.userId);
+                            }
+                            variants[matchedIdx] = updatedVariant;
+                        } else {
+                            // Catalog piece: atomically decrement stockCount
+                            if (currentStock < qty && currentOrder.stockLocked !== true) {
+                                hasConflict = true;
+                                conflictItemTitle = `${pData.title || item.title || entry.ref.id} (${targetVariant.colorName || 'Default'})`;
+                                break;
+                            }
+
+                            const newStock = Math.max(0, currentStock - qty);
+                            const updatedVariant = {
+                                ...targetVariant,
+                                stockCount: newStock,
+                                inStock: newStock > 0
+                            };
+                            if (Array.isArray(updatedVariant.reservations)) {
+                                updatedVariant.reservations = updatedVariant.reservations.filter(r => r && r.userId !== currentOrder.userId);
+                            }
+                            variants[matchedIdx] = updatedVariant;
                         }
 
-                        const updatedVariant = { ...targetVariant, inStock: false };
-                        delete updatedVariant.reservedUntil;
-                        delete updatedVariant.reservedBy;
-                        variants[matchedIdx] = updatedVariant;
+                        // Sync product-level inStock with variant availability
+                        const anyVariantInStock = variants.some(v => v && v.inStock === true && (typeof v.stockCount !== "number" || v.stockCount > 0));
 
                         productsToUpdate.push({
                             ref: entry.ref,
                             data: {
                                 variants: variants,
+                                inStock: anyVariantInStock,
                                 updatedAt: FieldValue.serverTimestamp()
                             }
                         });
                     }
                 } else {
-                    if (pData.inStock === false && currentOrder.stockLocked !== true) {
-                        hasConflict = true;
-                        conflictItemTitle = pData.title || item.title || entry.ref.id;
-                        break;
-                    }
+                    const currentStock = typeof pData.stockCount === "number"
+                        ? pData.stockCount
+                        : (pData.inStock === false ? 0 : 1);
 
-                    productsToUpdate.push({
-                        ref: entry.ref,
-                        data: {
-                            inStock: false,
-                            reservedUntil: FieldValue.delete(),
-                            reservedBy: FieldValue.delete(),
-                            updatedAt: FieldValue.serverTimestamp()
+                    if (isArtClusive) {
+                        if (pData.inStock === false && currentOrder.stockLocked !== true) {
+                            hasConflict = true;
+                            conflictItemTitle = pData.title || item.title || entry.ref.id;
+                            break;
                         }
-                    });
+
+                        productsToUpdate.push({
+                            ref: entry.ref,
+                            data: {
+                                inStock: false,
+                                stockCount: 0,
+                                reservedUntil: FieldValue.delete(),
+                                reservedBy: FieldValue.delete(),
+                                updatedAt: FieldValue.serverTimestamp()
+                            }
+                        });
+                    } else {
+                        if (currentStock < qty && currentOrder.stockLocked !== true) {
+                            hasConflict = true;
+                            conflictItemTitle = pData.title || item.title || entry.ref.id;
+                            break;
+                        }
+
+                        const newStock = Math.max(0, currentStock - qty);
+                        productsToUpdate.push({
+                            ref: entry.ref,
+                            data: {
+                                stockCount: newStock,
+                                inStock: newStock > 0,
+                                updatedAt: FieldValue.serverTimestamp()
+                            }
+                        });
+                    }
                 }
             }
 
@@ -196,7 +304,7 @@ async function lockArtClusiveStockForOrder(orderRef, orderData) {
                 tx.update(orderRef, {
                     status: "CONFLICT_REFUND_REQUIRED",
                     stockConflict: true,
-                    conflictReason: `1-of-1 piece '${conflictItemTitle}' was already claimed in another checkout. Immediate refund required.`,
+                    conflictReason: `Artisanal piece '${conflictItemTitle}' is no longer available in the requested quantity. Immediate refund or review required.`,
                     conflictAt: FieldValue.serverTimestamp()
                 });
                 return;
@@ -212,7 +320,7 @@ async function lockArtClusiveStockForOrder(orderRef, orderData) {
                 stockLocked: true,
                 stockLockedAt: FieldValue.serverTimestamp()
             });
-            console.log(`[STOCK LOCKED] Order ${orderRef.id} successfully locked 1-of-1 stock.`);
+            console.log(`[STOCK LOCKED] Order ${orderRef.id} successfully locked inventory.`);
         });
     } catch (err) {
         console.error(`Error in lockArtClusiveStockForOrder transaction for order ${orderRef.id}:`, err);
@@ -443,243 +551,305 @@ exports.createRazorpayOrder = onCall(
             throw new HttpsError("invalid-argument", "Cart is empty. Please select an artisanal weave.");
         }
 
+        const uid = request.auth.uid;
+
+        // One-time use guard for FIRST10 promo code per user
+        if (promoCode === "FIRST10" && uid) {
+            const priorPromoSnap = await db.collection("orders")
+                .where("userId", "==", uid)
+                .where("pricing.promoCode", "==", "FIRST10")
+                .limit(1)
+                .get();
+            if (!priorPromoSnap.empty) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "The promo code FIRST10 has already been used on a previous order by this account."
+                );
+            }
+        }
+
         // Strictly re-calculate subtotal on the server using authoritative product prices
         let subtotal = 0;
         const verifiedItems = [];
+        const acquiredReservations = [];
 
-        for (const item of clientItems) {
-            const pid = item.productId || item.id;
-            const qty = Math.max(1, Math.min(10, Number(item.quantity || 1)));
-            const product = await getAuthoritativeProduct(pid);
+        try {
+            for (const item of clientItems) {
+                const pid = item.productId || item.id;
+                const qty = Math.max(1, Math.min(10, Number(item.quantity || 1)));
+                const product = await getAuthoritativeProduct(pid);
 
-            if (!product || product.priceInr <= 0) {
-                throw new HttpsError(
-                    "not-found",
-                    `Artisanal piece with ID '${pid}' could not be verified in store catalog.`
-                );
-            }
+                if (!product || product.priceInr <= 0) {
+                    throw new HttpsError(
+                        "not-found",
+                        `Artisanal piece with ID '${pid}' could not be verified in store catalog.`
+                    );
+                }
 
-            // Reject if 1-of-1 selected variant or product is already claimed / out of stock
-            const targetVariantId = item.variantId || item.selectedVariantId;
-            const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
-            const variants = product.variants || [];
+                // Reject if 1-of-1 selected variant or product is already claimed / out of stock
+                const targetVariantId = item.variantId || item.selectedVariantId;
+                const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+                const variants = product.variants || [];
 
-            let matchedVariant = null;
-            if (targetVariantId) {
-                matchedVariant = variants.find(v => v && v.id === targetVariantId);
-            }
-            if (!matchedVariant && targetColorName && targetColorName !== "standard") {
-                matchedVariant = variants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
-            }
-            if (!matchedVariant && variants.length > 0) {
-                matchedVariant = variants[0];
-            }
+                let matchedVariant = null;
+                if (targetVariantId) {
+                    matchedVariant = variants.find(v => v && v.id === targetVariantId);
+                }
+                if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                    matchedVariant = variants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                }
+                if (!matchedVariant && variants.length > 0) {
+                    matchedVariant = variants[0];
+                }
 
-            if (matchedVariant && matchedVariant.inStock === false) {
-                throw new HttpsError(
-                    "failed-precondition",
-                    "This 1-of-1 piece has already been claimed."
-                );
-            }
-            if (product.inStock === false) {
-                throw new HttpsError(
-                    "failed-precondition",
-                    "This 1-of-1 piece has already been claimed."
-                );
-            }
-
-            const rawCategory = (product.category || "").toString().trim().toUpperCase();
-            const uid = request.auth.uid;
-
-            // Atomic 10-Minute Reservation Hold for 1-of-1 pieces (category === "CUSTOM")
-            if (rawCategory === "CUSTOM") {
-                const productRef = db.collection("products").doc(pid);
-                await db.runTransaction(async (tx) => {
-                    const pSnap = await tx.get(productRef);
-                    if (!pSnap.exists) {
-                        return;
-                    }
-
-                    const pData = pSnap.data() || {};
-                    const pVariants = Array.isArray(pData.variants) ? [...pData.variants] : [];
-                    const now = Date.now();
-
-                    if (pVariants.length > 0) {
-                        let matchedIdx = -1;
-                        if (targetVariantId) {
-                            matchedIdx = pVariants.findIndex(v => v && v.id === targetVariantId);
-                        }
-                        if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
-                            matchedIdx = pVariants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
-                        }
-                        if (matchedIdx === -1) {
-                            matchedIdx = 0;
-                        }
-
-                        const selectedVariant = pVariants[matchedIdx];
-                        if (!selectedVariant || selectedVariant.inStock === false || pData.inStock === false) {
-                            throw new HttpsError(
-                                "failed-precondition",
-                                "This 1-of-1 piece has already been claimed."
-                            );
-                        }
-
-                        const isReservedByOther = (
-                            selectedVariant.reservedUntil &&
-                            selectedVariant.reservedUntil > now &&
-                            selectedVariant.reservedBy &&
-                            selectedVariant.reservedBy !== uid
-                        ) || (
-                            Array.isArray(selectedVariant.reservations) &&
-                            selectedVariant.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
-                        );
-
-                        if (isReservedByOther) {
-                            throw new HttpsError(
-                                "failed-precondition",
-                                "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
-                            );
-                        }
-
-                        // Atomic 10-minute reservation hold
-                        const activeReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
-                        activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
-
-                        pVariants[matchedIdx] = {
-                            ...selectedVariant,
-                            reservedUntil: now + 10 * 60 * 1000,
-                            reservedBy: uid,
-                            reservations: activeReservations
-                        };
-
-                        tx.update(productRef, {
-                            variants: pVariants,
-                            updatedAt: FieldValue.serverTimestamp()
-                        });
-                    } else {
-                        if (pData.inStock === false) {
-                            throw new HttpsError(
-                                "failed-precondition",
-                                "This 1-of-1 piece has already been claimed."
-                            );
-                        }
-
-                        const isReservedByOther = (
-                            pData.reservedUntil &&
-                            pData.reservedUntil > now &&
-                            pData.reservedBy &&
-                            pData.reservedBy !== uid
-                        ) || (
-                            Array.isArray(pData.reservations) &&
-                            pData.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
-                        );
-
-                        if (isReservedByOther) {
-                            throw new HttpsError(
-                                "failed-precondition",
-                                "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
-                            );
-                        }
-
-                        const activeReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
-                        activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
-
-                        tx.update(productRef, {
-                            reservedUntil: now + 10 * 60 * 1000,
-                            reservedBy: uid,
-                            reservations: activeReservations,
-                            updatedAt: FieldValue.serverTimestamp()
-                        });
-                    }
-                });
-            } else {
-                // Non-CUSTOM products: register reservation entry for immediate release on cancel
-                if (matchedVariant && matchedVariant.inStock === false) {
+                if (matchedVariant && (matchedVariant.inStock === false || (typeof matchedVariant.stockCount === "number" && matchedVariant.stockCount <= 0))) {
                     throw new HttpsError(
                         "failed-precondition",
-                        "This piece is currently out of stock."
+                        `"${product.title}" is currently out of stock.`
                     );
                 }
                 if (product.inStock === false) {
                     throw new HttpsError(
                         "failed-precondition",
-                        "This piece is currently out of stock."
+                        `"${product.title}" is currently out of stock.`
                     );
                 }
 
-                const productRef = db.collection("products").doc(pid);
-                await db.runTransaction(async (tx) => {
-                    const pSnap = await tx.get(productRef);
-                    if (!pSnap.exists) return;
-                    const pData = pSnap.data() || {};
-                    const pVariants = Array.isArray(pData.variants) ? [...pData.variants] : [];
-                    const now = Date.now();
+                const rawCategory = (product.category || "").toString().trim().toUpperCase();
 
-                    if (pVariants.length > 0) {
-                        let matchedIdx = -1;
-                        if (targetVariantId) {
-                            matchedIdx = pVariants.findIndex(v => v && v.id === targetVariantId);
-                        }
-                        if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
-                            matchedIdx = pVariants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
-                        }
-                        if (matchedIdx === -1) {
-                            matchedIdx = 0;
+                // Atomic 10-Minute Reservation Hold for 1-of-1 pieces (category === "CUSTOM")
+                if (rawCategory === "CUSTOM") {
+                    const productRef = db.collection("products").doc(pid);
+                    await db.runTransaction(async (tx) => {
+                        const pSnap = await tx.get(productRef);
+                        if (!pSnap.exists) {
+                            return;
                         }
 
-                        const selectedVariant = pVariants[matchedIdx];
-                        if (!selectedVariant || selectedVariant.inStock === false || pData.inStock === false) {
-                            throw new HttpsError("failed-precondition", "This piece is currently out of stock.");
+                        const pData = pSnap.data() || {};
+                        const pVariants = Array.isArray(pData.variants) ? [...pData.variants] : [];
+                        const now = Date.now();
+
+                        if (pVariants.length > 0) {
+                            let matchedIdx = -1;
+                            if (targetVariantId) {
+                                matchedIdx = pVariants.findIndex(v => v && v.id === targetVariantId);
+                            }
+                            if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                                matchedIdx = pVariants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                            }
+                            if (matchedIdx === -1) {
+                                matchedIdx = 0;
+                            }
+
+                            const selectedVariant = pVariants[matchedIdx];
+                            if (!selectedVariant || selectedVariant.inStock === false || pData.inStock === false) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    "This 1-of-1 piece has already been claimed."
+                                );
+                            }
+
+                            const isReservedByOther = (
+                                selectedVariant.reservedUntil &&
+                                selectedVariant.reservedUntil > now &&
+                                selectedVariant.reservedBy &&
+                                selectedVariant.reservedBy !== uid
+                            ) || (
+                                Array.isArray(selectedVariant.reservations) &&
+                                selectedVariant.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                            );
+
+                            if (isReservedByOther) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
+                                );
+                            }
+
+                            // Atomic 10-minute reservation hold
+                            const activeReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                            activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
+
+                            pVariants[matchedIdx] = {
+                                ...selectedVariant,
+                                reservedUntil: now + 10 * 60 * 1000,
+                                reservedBy: uid,
+                                reservations: activeReservations
+                            };
+
+                            tx.update(productRef, {
+                                variants: pVariants,
+                                updatedAt: FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            if (pData.inStock === false) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    "This 1-of-1 piece has already been claimed."
+                                );
+                            }
+
+                            const isReservedByOther = (
+                                pData.reservedUntil &&
+                                pData.reservedUntil > now &&
+                                pData.reservedBy &&
+                                pData.reservedBy !== uid
+                            ) || (
+                                Array.isArray(pData.reservations) &&
+                                pData.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                            );
+
+                            if (isReservedByOther) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
+                                );
+                            }
+
+                            const activeReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                            activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
+
+                            tx.update(productRef, {
+                                reservedUntil: now + 10 * 60 * 1000,
+                                reservedBy: uid,
+                                reservations: activeReservations,
+                                updatedAt: FieldValue.serverTimestamp()
+                            });
                         }
+                    });
 
-                        const currentReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
-                        currentReservations.push({
-                            userId: uid,
-                            expiresAt: now + 10 * 60 * 1000,
-                            quantity: qty
-                        });
+                    acquiredReservations.push({
+                        productId: pid,
+                        variantId: targetVariantId || (matchedVariant ? matchedVariant.id : ""),
+                        isCustom: true
+                    });
+                } else {
+                    // Non-CUSTOM products: check available capacity against active reservations
+                    const productRef = db.collection("products").doc(pid);
+                    await db.runTransaction(async (tx) => {
+                        const pSnap = await tx.get(productRef);
+                        if (!pSnap.exists) return;
+                        const pData = pSnap.data() || {};
+                        const pVariants = Array.isArray(pData.variants) ? [...pData.variants] : [];
+                        const now = Date.now();
 
-                        pVariants[matchedIdx] = {
-                            ...selectedVariant,
-                            reservations: currentReservations
-                        };
+                        if (pVariants.length > 0) {
+                            let matchedIdx = -1;
+                            if (targetVariantId) {
+                                matchedIdx = pVariants.findIndex(v => v && v.id === targetVariantId);
+                            }
+                            if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                                matchedIdx = pVariants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                            }
+                            if (matchedIdx === -1) {
+                                matchedIdx = 0;
+                            }
 
-                        tx.update(productRef, {
-                            variants: pVariants,
-                            updatedAt: FieldValue.serverTimestamp()
-                        });
-                    } else {
-                        if (pData.inStock === false) {
-                            throw new HttpsError("failed-precondition", "This piece is currently out of stock.");
+                            const selectedVariant = pVariants[matchedIdx];
+                            const stockCount = typeof selectedVariant.stockCount === "number"
+                                ? selectedVariant.stockCount
+                                : (selectedVariant.inStock === false ? 0 : 1);
+
+                            if (!selectedVariant || selectedVariant.inStock === false || stockCount <= 0 || pData.inStock === false) {
+                                throw new HttpsError("failed-precondition", `"${product.title}" is currently out of stock.`);
+                            }
+
+                            const currentReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                            const activeReservedQty = currentReservations.reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
+                            const availableCapacity = stockCount - activeReservedQty;
+
+                            if (availableCapacity <= 0) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    `All available units of "${product.title}" are currently in checkout. Please try again in a few minutes.`
+                                );
+                            }
+                            if (qty > availableCapacity) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    `Only ${availableCapacity} unit(s) available for "${product.title}". Please adjust your cart.`
+                                );
+                            }
+
+                            currentReservations.push({
+                                userId: uid,
+                                expiresAt: now + 10 * 60 * 1000,
+                                quantity: qty
+                            });
+
+                            pVariants[matchedIdx] = {
+                                ...selectedVariant,
+                                reservations: currentReservations
+                            };
+
+                            tx.update(productRef, {
+                                variants: pVariants,
+                                updatedAt: FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            const stockCount = typeof pData.stockCount === "number"
+                                ? pData.stockCount
+                                : (pData.inStock === false ? 0 : 1);
+
+                            if (pData.inStock === false || stockCount <= 0) {
+                                throw new HttpsError("failed-precondition", `"${product.title}" is currently out of stock.`);
+                            }
+
+                            const currentReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                            const activeReservedQty = currentReservations.reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
+                            const availableCapacity = stockCount - activeReservedQty;
+
+                            if (availableCapacity <= 0) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    `All available units of "${product.title}" are currently in checkout. Please try again in a few minutes.`
+                                );
+                            }
+                            if (qty > availableCapacity) {
+                                throw new HttpsError(
+                                    "failed-precondition",
+                                    `Only ${availableCapacity} unit(s) available for "${product.title}". Please adjust your cart.`
+                                );
+                            }
+
+                            currentReservations.push({
+                                userId: uid,
+                                expiresAt: now + 10 * 60 * 1000,
+                                quantity: qty
+                            });
+
+                            tx.update(productRef, {
+                                reservations: currentReservations,
+                                updatedAt: FieldValue.serverTimestamp()
+                            });
                         }
+                    });
 
-                        const currentReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
-                        currentReservations.push({
-                            userId: uid,
-                            expiresAt: now + 10 * 60 * 1000,
-                            quantity: qty
-                        });
+                    acquiredReservations.push({
+                        productId: pid,
+                        variantId: targetVariantId || (matchedVariant ? matchedVariant.id : ""),
+                        isCustom: false
+                    });
+                }
 
-                        tx.update(productRef, {
-                            reservations: currentReservations,
-                            updatedAt: FieldValue.serverTimestamp()
-                        });
-                    }
+                const itemTotal = product.priceInr * qty;
+                subtotal += itemTotal;
+
+                verifiedItems.push({
+                    productId: pid,
+                    variantId: targetVariantId || (matchedVariant ? matchedVariant.id : ""),
+                    title: product.title,
+                    variant: (matchedVariant && matchedVariant.colorName) || item.variant || item.colorName || "Standard",
+                    quantity: qty,
+                    unitPriceInr: product.priceInr,
+                    totalInr: itemTotal
                 });
             }
-
-            const itemTotal = product.priceInr * qty;
-            subtotal += itemTotal;
-
-            verifiedItems.push({
-                productId: pid,
-                variantId: targetVariantId || (matchedVariant ? matchedVariant.id : ""),
-                title: product.title,
-                variant: (matchedVariant && matchedVariant.colorName) || item.variant || item.colorName || "Standard",
-                quantity: qty,
-                unitPriceInr: product.priceInr,
-                totalInr: itemTotal
-            });
+        } catch (err) {
+            // Atomic multi-item rollback: if any cart item fails verification, release all acquired holds
+            await rollbackAcquiredReservations(acquiredReservations, uid);
+            throw err;
         }
 
         // Compute discount, shipping, and grand total via centralized pricing helper
@@ -688,9 +858,7 @@ exports.createRazorpayOrder = onCall(
         const isPartialCod = paymentMode === "PARTIAL_COD";
         const chargeAmountInPaise = isPartialCod ? (pricing.codAdvanceInr * 100) : pricing.amountInPaise;
 
-        const currentYear = new Date().getFullYear();
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
-        const firestoreOrderId = `ART-${currentYear}-${randomNum}`;
+        const firestoreOrderId = generateCollisionFreeOrderId();
 
         // Create Live Razorpay Order
         const razorpay = getRazorpayClient();
@@ -864,11 +1032,26 @@ exports.createCodOrder = onCall(
             throw new HttpsError("invalid-argument", "Cart is empty. Please select an artisanal weave.");
         }
 
+        const uid = request.auth ? request.auth.uid : null;
+
+        // One-time use guard for FIRST10 promo code per user
+        if (promoCode === "FIRST10" && uid) {
+            const priorPromoSnap = await db.collection("orders")
+                .where("userId", "==", uid)
+                .where("pricing.promoCode", "==", "FIRST10")
+                .limit(1)
+                .get();
+            if (!priorPromoSnap.empty) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "The promo code FIRST10 has already been used on a previous order by this account."
+                );
+            }
+        }
+
         // Strictly re-calculate subtotal on the server using authoritative product prices
         let subtotal = 0;
         const verifiedItems = [];
-
-        const uid = request.auth ? request.auth.uid : null;
 
         for (const item of clientItems) {
             const pid = item.productId || item.id;
@@ -886,26 +1069,26 @@ exports.createCodOrder = onCall(
             const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
             const rawCategory = (product.category || "").toString().trim().toUpperCase();
 
-            // Check reservation and stock for CUSTOM pieces
-            if (rawCategory === "CUSTOM") {
-                const productRef = db.collection("products").doc(pid);
-                const pSnap = await productRef.get();
-                if (pSnap.exists) {
-                    const pData = pSnap.data() || {};
-                    const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
-                    const now = Date.now();
+            const productRef = db.collection("products").doc(pid);
+            const pSnap = await productRef.get();
+            if (pSnap.exists) {
+                const pData = pSnap.data() || {};
+                const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
+                const now = Date.now();
 
-                    let matchedVariant = null;
-                    if (targetVariantId) {
-                        matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
-                    }
-                    if (!matchedVariant && targetColorName && targetColorName !== "standard") {
-                        matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
-                    }
-                    if (!matchedVariant && pVariants.length > 0) {
-                        matchedVariant = pVariants[0];
-                    }
+                let matchedVariant = null;
+                if (targetVariantId) {
+                    matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
+                }
+                if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                    matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                }
+                if (!matchedVariant && pVariants.length > 0) {
+                    matchedVariant = pVariants[0];
+                }
 
+                // Check reservation and stock for CUSTOM pieces
+                if (rawCategory === "CUSTOM") {
                     if ((matchedVariant && matchedVariant.inStock === false) || pData.inStock === false) {
                         throw new HttpsError(
                             "failed-precondition",
@@ -939,6 +1122,40 @@ exports.createCodOrder = onCall(
                             "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
                         );
                     }
+                } else {
+                    // For non-CUSTOM catalog items, verify available stock and capacity
+                    const stockCount = matchedVariant
+                        ? (typeof matchedVariant.stockCount === "number" ? matchedVariant.stockCount : (matchedVariant.inStock === false ? 0 : 1))
+                        : (typeof pData.stockCount === "number" ? pData.stockCount : (pData.inStock === false ? 0 : 1));
+
+                    if (stockCount <= 0 || (matchedVariant && matchedVariant.inStock === false) || pData.inStock === false) {
+                        throw new HttpsError(
+                            "failed-precondition",
+                            `"${product.title}" is currently out of stock.`
+                        );
+                    }
+
+                    const reservations = matchedVariant
+                        ? (Array.isArray(matchedVariant.reservations) ? matchedVariant.reservations : [])
+                        : (Array.isArray(pData.reservations) ? pData.reservations : []);
+
+                    const activeReservedQty = reservations
+                        .filter(r => r && r.expiresAt > now && r.userId !== uid)
+                        .reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
+
+                    const availableCapacity = stockCount - activeReservedQty;
+                    if (availableCapacity <= 0) {
+                        throw new HttpsError(
+                            "failed-precondition",
+                            `All available units of "${product.title}" are currently in checkout. Please try again in a few minutes.`
+                        );
+                    }
+                    if (qty > availableCapacity) {
+                        throw new HttpsError(
+                            "failed-precondition",
+                            `Only ${availableCapacity} unit(s) available for "${product.title}". Please adjust your cart.`
+                        );
+                    }
                 }
             }
 
@@ -959,9 +1176,7 @@ exports.createCodOrder = onCall(
         // Compute discount, shipping, and grand total via centralized pricing helper
         const pricing = calculateOrderPricing(subtotal, promoCode);
 
-        const currentYear = new Date().getFullYear();
-        const randomNum = Math.floor(1000 + Math.random() * 9000);
-        const firestoreOrderId = `ART-${currentYear}-${randomNum}`;
+        const firestoreOrderId = generateCollisionFreeOrderId();
 
         const orderDoc = {
             orderId: firestoreOrderId,
@@ -1229,7 +1444,7 @@ exports.api = onRequest(
                 const isPartialCod = mode === "PARTIAL_COD";
                 const chargeAmountInPaise = isPartialCod ? (pricing.codAdvanceInr * 100) : pricing.amountInPaise;
 
-                const firestoreOrderId = `ART-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+                const firestoreOrderId = generateCollisionFreeOrderId();
                 const razorpay = getRazorpayClient();
                 const rzpOrder = await razorpay.orders.create({
                     amount: chargeAmountInPaise,
