@@ -2750,6 +2750,16 @@ async function validateAndPlaceOrder() {
                     modal: {
                         ondismiss: function () {
                             console.log("Customer closed Razorpay modal for Partial COD.");
+                            try {
+                                const releaseCallable = httpsCallable(functions, "releaseOrderReservation");
+                                releaseCallable({
+                                    firestoreOrderId: firestoreOrderId,
+                                    razorpayOrderId: razorpayOrderId,
+                                    reason: "modal_dismissed"
+                                }).catch(e => console.warn("Reservation release notice:", e.message));
+                            } catch (e) {
+                                console.warn("Could not trigger releaseOrderReservation:", e);
+                            }
                             restorePlaceOrderBtn(verifiedTotal);
                             alert("Payment was cancelled. Your bag is saved—you can retry checkout anytime.");
                         }
@@ -2765,13 +2775,24 @@ async function validateAndPlaceOrder() {
                         rawDesc.trim().toLowerCase() !== 'undefined' &&
                         rawDesc.trim().toLowerCase() !== 'null'
                     ) ? rawDesc.trim() : "Payment was cancelled. Your bag is saved—you can retry checkout anytime.";
+                    try {
+                        const releaseCallable = httpsCallable(functions, "releaseOrderReservation");
+                        releaseCallable({
+                            firestoreOrderId: firestoreOrderId,
+                            razorpayOrderId: razorpayOrderId,
+                            reason: cleanDesc
+                        }).catch(e => console.warn("Reservation release notice:", e.message));
+                    } catch (e) {
+                        console.warn("Could not trigger releaseOrderReservation:", e);
+                    }
                     alert("Advance Payment Status: " + cleanDesc);
                     restorePlaceOrderBtn(verifiedTotal);
                 });
                 rzp.open();
             } catch (createErr) {
                 console.error("Order creation error:", createErr);
-                alert("Failed to initiate advance token checkout: " + (createErr.message || "Please check connection."));
+                const rawMsg = createErr.message || "Failed to initiate advance token checkout. Please try again.";
+                alert(rawMsg);
                 restorePlaceOrderBtn(grandTotal);
             }
             return;
@@ -2786,7 +2807,8 @@ async function validateAndPlaceOrder() {
                 items: state.cart.map(i => ({
                     productId: i.product.id,
                     quantity: i.quantity,
-                    variant: i.variant.colorName
+                    variant: i.variant.colorName,
+                    variantId: i.variant ? i.variant.id : null
                 })),
                 shippingAddress: {
                     receiverName,
@@ -2806,7 +2828,7 @@ async function validateAndPlaceOrder() {
             handleOrderSuccessDisplay(firestoreOrderId, "COD", finalTotal, receiverName, receiverPhone, updatedAddrObj, pricing);
         } catch (err) {
             console.error("COD order creation error:", err);
-            alert(`Failed to place Cash on Delivery order: ${err.message || err}. Please try again.`);
+            alert(err.message || "Failed to place Cash on Delivery order. Please try again.");
             restorePlaceOrderBtn(grandTotal);
         }
         return;
@@ -2900,6 +2922,16 @@ async function validateAndPlaceOrder() {
             modal: {
                 ondismiss: function () {
                     console.log("Customer closed Razorpay modal.");
+                    try {
+                        const releaseCallable = httpsCallable(functions, "releaseOrderReservation");
+                        releaseCallable({
+                            firestoreOrderId: firestoreOrderId,
+                            razorpayOrderId: razorpayOrderId,
+                            reason: "modal_dismissed"
+                        }).catch(e => console.warn("Reservation release notice:", e.message));
+                    } catch (e) {
+                        console.warn("Could not trigger releaseOrderReservation:", e);
+                    }
                     restorePlaceOrderBtn(verifiedTotal);
                     alert("Payment was cancelled. Your bag is saved—you can retry checkout anytime.");
                 }
@@ -2915,6 +2947,16 @@ async function validateAndPlaceOrder() {
                 rawDesc.trim().toLowerCase() !== 'undefined' &&
                 rawDesc.trim().toLowerCase() !== 'null'
             ) ? rawDesc.trim() : "Payment was cancelled. Your bag is saved—you can retry checkout anytime.";
+            try {
+                const releaseCallable = httpsCallable(functions, "releaseOrderReservation");
+                releaseCallable({
+                    firestoreOrderId: firestoreOrderId,
+                    razorpayOrderId: razorpayOrderId,
+                    reason: cleanDesc
+                }).catch(e => console.warn("Reservation release notice:", e.message));
+            } catch (e) {
+                console.warn("Could not trigger releaseOrderReservation:", e);
+            }
             alert("Payment Status: " + cleanDesc);
             restorePlaceOrderBtn(verifiedTotal);
         });
@@ -2922,7 +2964,8 @@ async function validateAndPlaceOrder() {
 
     } catch (createErr) {
         console.error("Order creation error:", createErr);
-        alert("Failed to initiate live checkout: " + (createErr.message || "Please check connection."));
+        const rawMsg = createErr.message || "Failed to initiate live checkout. Please try again.";
+        alert(rawMsg);
         restorePlaceOrderBtn(grandTotal);
     }
 }

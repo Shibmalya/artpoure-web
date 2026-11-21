@@ -220,6 +220,135 @@ async function lockArtClusiveStockForOrder(orderRef, orderData) {
     }
 }
 
+/**
+ * Releases stock reservation for non-CUSTOM products upon payment cancellation or failure.
+ * STRICT POLICY: CUSTOM (ArtClusive 1-of-1) pieces maintain their 10-minute hold even on failure/cancellation.
+ * All other catalog products have their reservation immediately removed.
+ */
+async function releaseReservationForOrder(orderRef, orderData, reason = "payment_cancelled") {
+    if (!orderRef || !orderData) return;
+
+    // Do not release if order was already confirmed or stock was finalized
+    if (orderData.status === "CONFIRMED" || orderData.stockLocked === true) {
+        return;
+    }
+
+    const items = orderData.items || [];
+    const userId = orderData.userId;
+    if (!Array.isArray(items) || items.length === 0 || !userId) {
+        return;
+    }
+
+    try {
+        await db.runTransaction(async (tx) => {
+            const orderSnap = await tx.get(orderRef);
+            if (!orderSnap.exists) return;
+            const currentOrder = orderSnap.data() || {};
+            if (currentOrder.status === "CONFIRMED" || currentOrder.stockLocked === true) {
+                return;
+            }
+
+            // In Firestore transactions, all reads must occur before writes
+            const productEntries = [];
+            for (const item of items) {
+                const pid = item.productId || item.id;
+                if (!pid) continue;
+                const pRef = db.collection("products").doc(pid);
+                const pSnap = await tx.get(pRef);
+                productEntries.push({
+                    ref: pRef,
+                    snap: pSnap,
+                    item: item
+                });
+            }
+
+            const now = Date.now();
+            const productsToUpdate = [];
+
+            for (const entry of productEntries) {
+                if (!entry.snap.exists) continue;
+                const pData = entry.snap.data() || {};
+                const rawCategory = (pData.category || "").toString().trim().toUpperCase();
+
+                // STRICT RULE: If product.category is "CUSTOM" (case-insensitive), DO NOT RELEASE early!
+                // Leave reservedUntil / reservations intact so it expires naturally after 10 minutes.
+                if (rawCategory === "CUSTOM") {
+                    console.log(`[RESERVATION PRESERVED] 1-of-1 CUSTOM piece ${entry.ref.id} retains 10-minute hold.`);
+                    continue;
+                }
+
+                // For all other categories: immediately remove orderData.userId's entry from variant.reservations
+                // and prune any expired reservations (expiresAt <= now)
+                const item = entry.item;
+                const variants = Array.isArray(pData.variants) ? [...pData.variants] : [];
+
+                if (variants.length > 0) {
+                    const targetVariantId = item.variantId || item.selectedVariantId;
+                    const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+
+                    let matchedIdx = -1;
+                    if (targetVariantId) {
+                        matchedIdx = variants.findIndex(v => v && v.id === targetVariantId);
+                    }
+                    if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                        matchedIdx = variants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                    }
+                    if (matchedIdx === -1) {
+                        matchedIdx = 0;
+                    }
+
+                    if (matchedIdx >= 0 && variants[matchedIdx]) {
+                        const targetVariant = variants[matchedIdx];
+                        const currentRes = Array.isArray(targetVariant.reservations) ? targetVariant.reservations : [];
+                        const cleanedRes = currentRes.filter(r => r && r.userId !== userId && r.expiresAt > now);
+
+                        variants[matchedIdx] = {
+                            ...targetVariant,
+                            reservations: cleanedRes
+                        };
+
+                        productsToUpdate.push({
+                            ref: entry.ref,
+                            data: {
+                                variants: variants,
+                                updatedAt: FieldValue.serverTimestamp()
+                            }
+                        });
+                    }
+                } else {
+                    const currentRes = Array.isArray(pData.reservations) ? pData.reservations : [];
+                    const cleanedRes = currentRes.filter(r => r && r.userId !== userId && r.expiresAt > now);
+
+                    productsToUpdate.push({
+                        ref: entry.ref,
+                        data: {
+                            reservations: cleanedRes,
+                            updatedAt: FieldValue.serverTimestamp()
+                        }
+                    });
+                }
+            }
+
+            // Apply product updates
+            for (const pUpdate of productsToUpdate) {
+                tx.update(pUpdate.ref, pUpdate.data);
+            }
+
+            // Update order status
+            tx.update(orderRef, {
+                status: "PAYMENT_CANCELLED",
+                paymentStatus: "CANCELLED",
+                cancelledReason: reason,
+                reservationReleasedAt: FieldValue.serverTimestamp()
+            });
+
+            console.log(`[RESERVATION RELEASED] Released non-custom reservations for order ${orderRef.id} (reason: ${reason}).`);
+        });
+    } catch (err) {
+        console.error(`Error in releaseReservationForOrder for ${orderRef.id}:`, err);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Centralized Order Pricing & Merchandising Rules
 // ─────────────────────────────────────────────────────────────────────────────
@@ -395,23 +524,32 @@ exports.createRazorpayOrder = onCall(
                             );
                         }
 
-                        if (
+                        const isReservedByOther = (
                             selectedVariant.reservedUntil &&
                             selectedVariant.reservedUntil > now &&
                             selectedVariant.reservedBy &&
                             selectedVariant.reservedBy !== uid
-                        ) {
+                        ) || (
+                            Array.isArray(selectedVariant.reservations) &&
+                            selectedVariant.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                        );
+
+                        if (isReservedByOther) {
                             throw new HttpsError(
                                 "failed-precondition",
-                                "This 1-of-1 piece is currently reserved in another checkout. Please try again in a few minutes."
+                                "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
                             );
                         }
 
                         // Atomic 10-minute reservation hold
+                        const activeReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                        activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
+
                         pVariants[matchedIdx] = {
                             ...selectedVariant,
                             reservedUntil: now + 10 * 60 * 1000,
-                            reservedBy: uid
+                            reservedBy: uid,
+                            reservations: activeReservations
                         };
 
                         tx.update(productRef, {
@@ -426,21 +564,104 @@ exports.createRazorpayOrder = onCall(
                             );
                         }
 
-                        if (
+                        const isReservedByOther = (
                             pData.reservedUntil &&
                             pData.reservedUntil > now &&
                             pData.reservedBy &&
                             pData.reservedBy !== uid
-                        ) {
+                        ) || (
+                            Array.isArray(pData.reservations) &&
+                            pData.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                        );
+
+                        if (isReservedByOther) {
                             throw new HttpsError(
                                 "failed-precondition",
-                                "This 1-of-1 piece is currently reserved in another checkout. Please try again in a few minutes."
+                                "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
                             );
                         }
+
+                        const activeReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                        activeReservations.push({ userId: uid, expiresAt: now + 10 * 60 * 1000, quantity: qty });
 
                         tx.update(productRef, {
                             reservedUntil: now + 10 * 60 * 1000,
                             reservedBy: uid,
+                            reservations: activeReservations,
+                            updatedAt: FieldValue.serverTimestamp()
+                        });
+                    }
+                });
+            } else {
+                // Non-CUSTOM products: register reservation entry for immediate release on cancel
+                if (matchedVariant && matchedVariant.inStock === false) {
+                    throw new HttpsError(
+                        "failed-precondition",
+                        "This piece is currently out of stock."
+                    );
+                }
+                if (product.inStock === false) {
+                    throw new HttpsError(
+                        "failed-precondition",
+                        "This piece is currently out of stock."
+                    );
+                }
+
+                const productRef = db.collection("products").doc(pid);
+                await db.runTransaction(async (tx) => {
+                    const pSnap = await tx.get(productRef);
+                    if (!pSnap.exists) return;
+                    const pData = pSnap.data() || {};
+                    const pVariants = Array.isArray(pData.variants) ? [...pData.variants] : [];
+                    const now = Date.now();
+
+                    if (pVariants.length > 0) {
+                        let matchedIdx = -1;
+                        if (targetVariantId) {
+                            matchedIdx = pVariants.findIndex(v => v && v.id === targetVariantId);
+                        }
+                        if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                            matchedIdx = pVariants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                        }
+                        if (matchedIdx === -1) {
+                            matchedIdx = 0;
+                        }
+
+                        const selectedVariant = pVariants[matchedIdx];
+                        if (!selectedVariant || selectedVariant.inStock === false || pData.inStock === false) {
+                            throw new HttpsError("failed-precondition", "This piece is currently out of stock.");
+                        }
+
+                        const currentReservations = (selectedVariant.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                        currentReservations.push({
+                            userId: uid,
+                            expiresAt: now + 10 * 60 * 1000,
+                            quantity: qty
+                        });
+
+                        pVariants[matchedIdx] = {
+                            ...selectedVariant,
+                            reservations: currentReservations
+                        };
+
+                        tx.update(productRef, {
+                            variants: pVariants,
+                            updatedAt: FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        if (pData.inStock === false) {
+                            throw new HttpsError("failed-precondition", "This piece is currently out of stock.");
+                        }
+
+                        const currentReservations = (pData.reservations || []).filter(r => r && r.expiresAt > now && r.userId !== uid);
+                        currentReservations.push({
+                            userId: uid,
+                            expiresAt: now + 10 * 60 * 1000,
+                            quantity: qty
+                        });
+
+                        tx.update(productRef, {
+                            reservations: currentReservations,
                             updatedAt: FieldValue.serverTimestamp()
                         });
                     }
@@ -647,6 +868,8 @@ exports.createCodOrder = onCall(
         let subtotal = 0;
         const verifiedItems = [];
 
+        const uid = request.auth ? request.auth.uid : null;
+
         for (const item of clientItems) {
             const pid = item.productId || item.id;
             const qty = Math.max(1, Math.min(10, Number(item.quantity || 1)));
@@ -659,11 +882,72 @@ exports.createCodOrder = onCall(
                 );
             }
 
+            const targetVariantId = item.variantId || item.selectedVariantId;
+            const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+            const rawCategory = (product.category || "").toString().trim().toUpperCase();
+
+            // Check reservation and stock for CUSTOM pieces
+            if (rawCategory === "CUSTOM") {
+                const productRef = db.collection("products").doc(pid);
+                const pSnap = await productRef.get();
+                if (pSnap.exists) {
+                    const pData = pSnap.data() || {};
+                    const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
+                    const now = Date.now();
+
+                    let matchedVariant = null;
+                    if (targetVariantId) {
+                        matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
+                    }
+                    if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                        matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                    }
+                    if (!matchedVariant && pVariants.length > 0) {
+                        matchedVariant = pVariants[0];
+                    }
+
+                    if ((matchedVariant && matchedVariant.inStock === false) || pData.inStock === false) {
+                        throw new HttpsError(
+                            "failed-precondition",
+                            "This 1-of-1 piece has already been claimed."
+                        );
+                    }
+
+                    const isReservedByOther = (
+                        matchedVariant &&
+                        matchedVariant.reservedUntil &&
+                        matchedVariant.reservedUntil > now &&
+                        matchedVariant.reservedBy &&
+                        matchedVariant.reservedBy !== uid
+                    ) || (
+                        matchedVariant &&
+                        Array.isArray(matchedVariant.reservations) &&
+                        matchedVariant.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                    ) || (
+                        pData.reservedUntil &&
+                        pData.reservedUntil > now &&
+                        pData.reservedBy &&
+                        pData.reservedBy !== uid
+                    ) || (
+                        Array.isArray(pData.reservations) &&
+                        pData.reservations.some(r => r && r.expiresAt > now && r.userId !== uid)
+                    );
+
+                    if (isReservedByOther) {
+                        throw new HttpsError(
+                            "failed-precondition",
+                            "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
+                        );
+                    }
+                }
+            }
+
             const itemTotal = product.priceInr * qty;
             subtotal += itemTotal;
 
             verifiedItems.push({
                 productId: pid,
+                variantId: targetVariantId || "",
                 title: product.title,
                 variant: item.variant || item.colorName || "Standard",
                 quantity: qty,
@@ -812,7 +1096,96 @@ exports.razorpayWebhook = onRequest(
             }
         }
 
+        // Handle payment.failed: release reservation for non-CUSTOM items immediately
+        if (event === "payment.failed") {
+            const paymentEntity = (payload.payment && payload.payment.entity) || {};
+            const orderEntity = (payload.order && payload.order.entity) || {};
+            const rzpOrderId = paymentEntity.order_id || orderEntity.id;
+            const receipt = orderEntity.receipt || (paymentEntity.notes && paymentEntity.notes.firestoreOrderId);
+            const failReason = paymentEntity.error_description || "payment_failed";
+
+            if (rzpOrderId || receipt) {
+                try {
+                    let orderSnap;
+                    if (receipt) {
+                        orderSnap = await db.collection("orders").doc(receipt).get();
+                    }
+                    if (!orderSnap || !orderSnap.exists) {
+                        const querySnap = await db.collection("orders")
+                            .where("razorpayOrderId", "==", rzpOrderId)
+                            .limit(1)
+                            .get();
+                        if (!querySnap.empty) {
+                            orderSnap = querySnap.docs[0];
+                        }
+                    }
+
+                    if (orderSnap && orderSnap.exists) {
+                        const currentData = orderSnap.data() || {};
+                        await releaseReservationForOrder(orderSnap.ref, currentData, `webhook: ${failReason}`);
+                    }
+                } catch (failErr) {
+                    console.error("Error releasing reservation on payment.failed webhook:", failErr);
+                }
+            }
+        }
+
         return res.status(200).json({ status: "ok" });
+    }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. CALLABLE: releaseOrderReservation
+// ─────────────────────────────────────────────────────────────────────────────
+exports.releaseOrderReservation = onCall(
+    { cors: true },
+    async (request) => {
+        if (!request.auth) {
+            throw new HttpsError("unauthenticated", "Must be securely signed in to release order reservation.");
+        }
+
+        const data = request.data || {};
+        const firestoreOrderId = data.firestoreOrderId || data.orderId;
+        const razorpayOrderId = data.razorpayOrderId;
+        const reason = data.reason || "payment_cancelled";
+
+        if (!firestoreOrderId && !razorpayOrderId) {
+            throw new HttpsError("invalid-argument", "Missing order identifier.");
+        }
+
+        let orderRef = null;
+        let orderSnap = null;
+
+        if (firestoreOrderId) {
+            orderRef = db.collection("orders").doc(firestoreOrderId);
+            orderSnap = await orderRef.get();
+        }
+        if ((!orderSnap || !orderSnap.exists) && razorpayOrderId) {
+            const querySnap = await db.collection("orders")
+                .where("razorpayOrderId", "==", razorpayOrderId)
+                .limit(1)
+                .get();
+            if (!querySnap.empty) {
+                orderSnap = querySnap.docs[0];
+                orderRef = orderSnap.ref;
+            }
+        }
+
+        if (!orderSnap || !orderSnap.exists) {
+            throw new HttpsError("not-found", "Order could not be found.");
+        }
+
+        const orderData = orderSnap.data() || {};
+        if (orderData.userId && orderData.userId !== request.auth.uid) {
+            throw new HttpsError("permission-denied", "Unauthorized: Caller does not match order owner.");
+        }
+
+        await releaseReservationForOrder(orderRef, orderData, reason);
+
+        return {
+            success: true,
+            message: "Non-custom reservation released successfully."
+        };
     }
 );
 
