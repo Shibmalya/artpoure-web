@@ -1530,7 +1530,7 @@ function setupEventListeners() {
             // Auto-fetch profile name and number if user is logged in (strip +91, exactly 10 digits)
             const currentUser = auth.currentUser;
             const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
-            const rawProfilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '9876543210';
+            const rawProfilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '7003248681';
             const cleanProfilePhone = rawProfilePhone.replace(/\D/g, '').slice(-10);
 
             if (nameInput && !nameInput.value.trim() && profileName) {
@@ -1851,7 +1851,7 @@ function setupEventListeners() {
 
     if (elements.editProfilePhoneBtn) {
         elements.editProfilePhoneBtn.addEventListener('click', () => {
-            const currentPhone = localStorage.getItem('user_profile_phone') || (auth.currentUser && auth.currentUser.phoneNumber) || "9876543210";
+            const currentPhone = localStorage.getItem('user_profile_phone') || (auth.currentUser && auth.currentUser.phoneNumber) || "7003248681";
             const rawPhone = prompt("Enter 10-digit mobile number:", currentPhone);
             if (rawPhone !== null) {
                 const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
@@ -2137,7 +2137,7 @@ function updateProfileModalDisplay() {
     }
 
     // Phone
-    const displayPhone = (user && user.phoneNumber) || storedPhone || "9876543210";
+    const displayPhone = (user && user.phoneNumber) || storedPhone || "7003248681";
     if (elements.profileUserPhone) {
         const clean = displayPhone.replace(/\D/g, '').slice(-10);
         elements.profileUserPhone.textContent = clean ? `+91 ${clean}` : "No phone number added";
@@ -2210,7 +2210,7 @@ function openCheckoutScreen() {
     // Auto-fetch profile name and phone from Auth or LocalStorage if not already filled
     const currentUser = auth.currentUser;
     const profileName = (currentUser && currentUser.displayName) || localStorage.getItem('user_profile_name') || 'Ananya Dey';
-    let profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '9876543210';
+    let profilePhone = (currentUser && currentUser.phoneNumber) || localStorage.getItem('user_profile_phone') || '7003248681';
     profilePhone = profilePhone.replace(/\D/g, '');
     if (profilePhone.length === 12 && profilePhone.startsWith('91')) {
         profilePhone = profilePhone.slice(2);
@@ -2219,7 +2219,7 @@ function openCheckoutScreen() {
         profilePhone = profilePhone.slice(-10);
     }
     if (!profilePhone) {
-        profilePhone = '9876543210';
+        profilePhone = '7003248681';
     }
 
     if (elements.checkoutReceiverName && !elements.checkoutReceiverName.value.trim() && profileName) {
