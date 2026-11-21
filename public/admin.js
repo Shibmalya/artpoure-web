@@ -319,6 +319,7 @@ function renderProductsGrid() {
         const variantsList = prod.variants || [];
         const formattedPrice = Number(prod.priceInr || 0).toLocaleString('en-IN');
         const isArrival = !!(prod.inNewArrivals || prod.isNewArrival);
+        const totalStock = variantsList.reduce((sum, v) => sum + (typeof v.stockCount === 'number' ? v.stockCount : (v.inStock === false ? 0 : 1)), 0);
 
         const variantDots = variantsList.map(v => {
             const swatch = v.swatchHex || '#1A1A1A';
@@ -339,6 +340,7 @@ function renderProductsGrid() {
                     <div class="card-variants-row">
                         ${variantDots}
                         <span class="variant-count-text">${variantsList.length} color${variantsList.length === 1 ? '' : 's'}</span>
+                        <span class="card-stock-badge ${totalStock > 0 ? 'in-stock' : 'out-of-stock'}">${totalStock > 0 ? `Stock: ${totalStock}` : 'OUT OF STOCK'}</span>
                     </div>
                     <div class="card-actions-bar" style="display: flex; flex-wrap: wrap; gap: 6px;">
                         <button class="btn-card-action edit-prod-btn" data-id="${prod.id}">✎ Edit</button>
@@ -488,7 +490,10 @@ function createVariantCard(variantData = {}) {
     const colorName = variantData.colorName || 'Royal Burgundy';
     const swatchHex = variantData.swatchHex || '#800020';
     const canvasHex = variantData.canvasHex || '#4A0E17';
-    const inStock = variantData.inStock !== false;
+    const stockCount = typeof variantData.stockCount === 'number'
+        ? variantData.stockCount
+        : (variantData.inStock === false ? 0 : 1);
+    const inStock = stockCount > 0;
 
     // Collect initial images array from variantData
     const initialImages = Array.isArray(variantData.images) && variantData.images.length > 0
@@ -527,11 +532,14 @@ function createVariantCard(variantData = {}) {
                     <span class="color-hex-text variant-canvas-hex">${canvasHex}</span>
                 </div>
             </div>
-            <div class="form-field-group" style="padding-bottom: 8px;">
-                <label class="checkbox-label">
-                    <input type="checkbox" class="variant-instock-check" ${inStock ? 'checked' : ''}>
-                    <span>In Stock</span>
-                </label>
+            <div class="form-field-group variant-stock-group">
+                <label>Available Stock (Units) *</label>
+                <div class="variant-stock-row">
+                    <input type="number" min="0" step="1" class="form-input variant-stock-input" value="${stockCount}">
+                    <span class="variant-stock-badge ${inStock ? 'in-stock' : 'out-of-stock'}">
+                        ${inStock ? 'IN STOCK' : 'OUT OF STOCK'}
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -562,6 +570,20 @@ function createVariantCard(variantData = {}) {
     const canvasHexSpan = card.querySelector('.variant-canvas-hex');
     canvasInput.addEventListener('input', e => {
         canvasHexSpan.textContent = e.target.value.toUpperCase();
+    });
+
+    // Stock input change listener
+    const stockInput = card.querySelector('.variant-stock-input');
+    const stockBadge = card.querySelector('.variant-stock-badge');
+    stockInput.addEventListener('input', e => {
+        const qty = Math.max(0, parseInt(e.target.value, 10) || 0);
+        if (qty > 0) {
+            stockBadge.textContent = 'IN STOCK';
+            stockBadge.className = 'variant-stock-badge in-stock';
+        } else {
+            stockBadge.textContent = 'OUT OF STOCK';
+            stockBadge.className = 'variant-stock-badge out-of-stock';
+        }
     });
 
     // File input multi-selection listener
@@ -621,6 +643,7 @@ el.addVariantBtn.addEventListener('click', () => {
         colorName: 'Midnight Emerald',
         swatchHex: '#0D3822',
         canvasHex: '#082114',
+        stockCount: 1,
         inStock: true
     });
 });
@@ -648,6 +671,7 @@ function initNewProductForm() {
         colorName: 'Royal Burgundy',
         swatchHex: '#800020',
         canvasHex: '#4A0E17',
+        stockCount: 1,
         inStock: true
     });
 }
@@ -702,6 +726,7 @@ function editProduct(productId) {
         swatchHex: '#800020',
         canvasHex: '#4A0E17',
         imageUrl: prod.imageUrl || '',
+        stockCount: 1,
         inStock: true
     }];
 
@@ -820,7 +845,9 @@ el.productEditForm.addEventListener('submit', async e => {
             const colorName = card.querySelector('.variant-color-name').value.trim();
             const swatchHex = card.querySelector('.variant-swatch-input').value;
             const canvasHex = card.querySelector('.variant-canvas-input').value;
-            const inStock = card.querySelector('.variant-instock-check').checked;
+            const rawQty = card.querySelector('.variant-stock-input').value;
+            const stockCount = Math.max(0, parseInt(rawQty, 10) || 0);
+            const inStock = stockCount > 0;
 
             const imageItems = card._variantImages || [];
             if (imageItems.length === 0) {
@@ -855,6 +882,7 @@ el.productEditForm.addEventListener('submit', async e => {
                 canvasHex: canvasHex,
                 imageUrl: resolvedUrls[0],
                 images: resolvedUrls,
+                stockCount: stockCount,
                 inStock: inStock
             });
         }
