@@ -692,7 +692,7 @@ function renderCuratedPicks() {
                 <div class="curated-card-media" style="background-color: ${variant.canvasHex || '#1C1A18'};">
                     <img src="${variant.imageUrl || product.imageUrl}" class="${isSoldOut ? 'card-img-dimmed' : ''}" alt="${product.fullName}" loading="lazy">
                     <div class="curated-badge-pill ${isArtclusive ? 'gold-badge' : ''}">${badgeLabel}</div>
-                    ${isSoldOut ? `<div class="curated-out-of-stock-badge">OUT OF STOCK</div>` : ''}
+                    ${isSoldOut ? `<div class="curated-out-of-stock-badge">OUT OF STOCK</div>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="curated-scarcity-badge">Only ${getVariantStockCount(variant)} left</div>` : '')}
                     <div class="curated-card-overlay">
                         <div class="curated-card-title">${product.editorialTitle}</div>
                         <div class="curated-card-sub">${product.fullName}</div>
@@ -954,7 +954,7 @@ function renderCatalog() {
             <article class="product-card ${isSoldOut ? 'product-card-sold-out' : ''}" data-id="${product.id}">
                 <div class="card-image-box" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <img class="product-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}">
-                    ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : ''}
+                    ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="card-scarcity-badge">Only ${getVariantStockCount(variant)} left</div>` : '')}
                     <button class="wishlist-btn ${isWishlisted ? 'active' : ''}" data-wishlist-id="${product.id}" title="Save to Wishlist">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="${isWishlisted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
@@ -3154,7 +3154,7 @@ function renderVaultPieces() {
             <div class="vault-card ${isSoldOut ? 'vault-card-sold-out' : ''}">
                 <div class="vault-card-img-wrap" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <span class="vault-tag">VAULT PIECE</span>
-                    ${isSoldOut ? `<span class="vault-sold-tag">OUT OF STOCK</span>` : ''}
+                    ${isSoldOut ? `<span class="vault-sold-tag">OUT OF STOCK</span>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<span class="vault-scarcity-tag">Only ${getVariantStockCount(variant)} left</span>` : '')}
                     <img src="${variant.imageUrl || item.imageUrl || ''}" class="vault-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" alt="${item.fullName || ''}">
                 </div>
                 <div class="vault-card-info">
@@ -3198,6 +3198,95 @@ let currentArtclusiveProduct = null;
 let currentEditorialProduct = null;
 let currentEditorialVariantIdx = 0;
 
+// --- REAL-TIME LIVE VIEWER PRESENCE (products/{productId}/viewers/{uid}) ---
+let currentViewerHeartbeat = null;
+let currentViewerUnsubscribe = null;
+let currentViewerDocRef = null;
+
+async function startViewerPresence(productId) {
+    stopViewerPresence();
+    if (!productId) return;
+    try {
+        await ensureAuthSession();
+        const user = auth.currentUser;
+        if (!user) return;
+        const uid = user.uid;
+        const viewerDoc = doc(db, 'products', productId, 'viewers', uid);
+        currentViewerDocRef = viewerDoc;
+
+        // Write presence on open
+        await setDoc(viewerDoc, { uid: uid, lastActive: serverTimestamp() }, { merge: true });
+
+        // Heartbeat every 45 seconds while viewing
+        currentViewerHeartbeat = setInterval(async () => {
+            try {
+                if (currentViewerDocRef) {
+                    await setDoc(currentViewerDocRef, { uid: uid, lastActive: serverTimestamp() }, { merge: true });
+                }
+            } catch (err) {
+                console.warn('Presence heartbeat error:', err);
+            }
+        }, 45000);
+
+        // Snapshot listener for active viewers in last 2 minutes
+        const viewersCol = collection(db, 'products', productId, 'viewers');
+        currentViewerUnsubscribe = onSnapshot(viewersCol, (snapshot) => {
+            const now = Date.now();
+            const twoMinAgo = now - 120000;
+            let activeCount = 0;
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                if (!data.lastActive) {
+                    activeCount++; // Pending local write or null timestamp counts as active
+                } else {
+                    const millis = data.lastActive.toMillis ? data.lastActive.toMillis() : (data.lastActive.seconds ? data.lastActive.seconds * 1000 : null);
+                    if (!millis || millis >= twoMinAgo) {
+                        activeCount++;
+                    }
+                }
+            });
+            updateViewerPillUI(activeCount);
+        }, (err) => {
+            console.warn('Viewers snapshot listener error:', err);
+        });
+    } catch (err) {
+        console.warn('Failed to start viewer presence:', err);
+    }
+}
+
+function updateViewerPillUI(count) {
+    const pill = document.getElementById('editorialLiveViewersPill');
+    const text = document.getElementById('editorialLiveViewersText');
+    if (!pill || !text) return;
+    if (count >= 2) {
+        text.textContent = `${count} clients viewing this piece now`;
+        pill.style.display = 'inline-flex';
+    } else {
+        pill.style.display = 'none';
+    }
+}
+
+function stopViewerPresence() {
+    if (currentViewerHeartbeat) {
+        clearInterval(currentViewerHeartbeat);
+        currentViewerHeartbeat = null;
+    }
+    if (currentViewerUnsubscribe) {
+        currentViewerUnsubscribe();
+        currentViewerUnsubscribe = null;
+    }
+    if (currentViewerDocRef) {
+        deleteDoc(currentViewerDocRef).catch(() => {});
+        currentViewerDocRef = null;
+    }
+    const pill = document.getElementById('editorialLiveViewersPill');
+    if (pill) pill.style.display = 'none';
+}
+
+window.addEventListener('beforeunload', () => {
+    stopViewerPresence();
+});
+
 function openEditorialPage(product) {
     if (!product) return;
     currentEditorialProduct = product;
@@ -3206,11 +3295,13 @@ function openEditorialPage(product) {
     if (!overlay) return;
 
     updateEditorialPageContent();
+    startViewerPresence(product.id);
     overlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 }
 
 function closeEditorialPage() {
+    stopViewerPresence();
     const overlay = document.getElementById('editorialDetailPage');
     if (overlay) overlay.style.display = 'none';
     currentEditorialProduct = null;
@@ -3255,6 +3346,31 @@ function updateEditorialPageContent() {
     if (title) title.textContent = product.editorialTitle || '';
     if (sub) sub.textContent = product.fullName || '';
     if (price) price.textContent = `₹${Number(product.priceInr || 0).toLocaleString('en-IN')}`;
+
+    // Scarcity Indicator
+    const scarcityEl = document.getElementById('editorialScarcityIndicator');
+    if (scarcityEl) {
+        const stock = getVariantStockCount(variant);
+        const isAvailable = isVariantAvailable(variant);
+        if (!isAvailable || stock === 0) {
+            scarcityEl.textContent = 'OUT OF STOCK';
+            scarcityEl.className = 'editorial-scarcity-indicator out-of-stock';
+            scarcityEl.style.display = 'inline-flex';
+        } else if (stock === 1) {
+            scarcityEl.textContent = product.category === 'CUSTOM' ? '1-of-1 Exclusive Piece' : 'Only 1 piece left';
+            scarcityEl.className = 'editorial-scarcity-indicator low-stock';
+            scarcityEl.style.display = 'inline-flex';
+        } else if (stock >= 2 && stock <= 5) {
+            scarcityEl.textContent = `Only ${stock} pieces left in stock`;
+            scarcityEl.className = 'editorial-scarcity-indicator low-stock';
+            scarcityEl.style.display = 'inline-flex';
+        } else {
+            scarcityEl.textContent = `${stock} pieces available`;
+            scarcityEl.className = 'editorial-scarcity-indicator in-stock';
+            scarcityEl.style.display = 'inline-flex';
+        }
+    }
+
     if (trustBadge) {
         trustBadge.textContent = product.trustBadgeText || 'Silk Mark Certified';
     }

@@ -45,6 +45,15 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if true;
       allow write: if isAdmin();
+
+      match /viewers/{viewerId} {
+        allow read: if true;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == viewerId
+                              && request.resource.data.keys().hasOnly(['lastActive', 'uid'])
+                              && request.resource.data.uid == request.auth.uid;
+        allow delete: if request.auth != null && request.auth.uid == viewerId;
+      }
     }
 
     match /categories/{categoryId} {

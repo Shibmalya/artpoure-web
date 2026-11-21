@@ -4172,6 +4172,117 @@ html.embedded-view .policy-container {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
 }
 
+/* ==========================================================================
+   STOCK SCARCITY INDICATORS & REAL-TIME PRESENCE PILLS
+   ========================================================================== */
+.card-scarcity-badge,
+.curated-scarcity-badge,
+.vault-scarcity-tag {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(141, 110, 99, 0.94);
+    color: #FFF8E1;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 0.8px solid rgba(197, 160, 89, 0.6);
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.curated-scarcity-badge {
+    font-size: 8px;
+    padding: 3px 7px;
+}
+
+.vault-scarcity-tag {
+    font-size: 9px;
+    padding: 4px 10px;
+}
+
+.editorial-stock-presence-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+
+.editorial-scarcity-indicator {
+    font-size: 11.5px;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.editorial-scarcity-indicator.out-of-stock {
+    color: #E53935;
+    background: rgba(229, 57, 53, 0.12);
+    border: 0.8px solid rgba(229, 57, 53, 0.4);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
+
+.editorial-scarcity-indicator.low-stock {
+    color: var(--accent-gold);
+}
+
+.editorial-scarcity-indicator.in-stock {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.editorial-live-viewers-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(197, 160, 89, 0.12);
+    border: 0.8px solid rgba(197, 160, 89, 0.35);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-weight: 500;
+    color: var(--accent-gold);
+    white-space: nowrap;
+}
+
+.live-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #2ECC71;
+    display: inline-block;
+    animation: liveDotPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes liveDotPulse {
+    0%, 100% {
+        opacity: 0.4;
+        transform: scale(0.85);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.15);
+        box-shadow: 0 0 8px rgba(46, 204, 113, 0.8);
+    }
+}
+
 .card-img-dimmed,
 .editorial-hero-box.media-dimmed .editorial-hero-img {
     opacity: 0.50 !important;
