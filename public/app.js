@@ -27,7 +27,8 @@ import {
     updateProfile,
     linkWithPopup,
     linkWithCredential,
-    EmailAuthProvider
+    EmailAuthProvider,
+    onSnapshot
 } from './firebase-config.js';
 
 // --- AUTHENTICATION SESSION HELPER ---
@@ -403,7 +404,55 @@ async function init() {
     updateBadges();
 }
 
-// --- FETCH PRODUCTS (Firestore with fallback) ---
+// --- AVAILABILITY & LIVE INVENTORY SOURCE OF TRUTH HELPERS ---
+function isVariantAvailable(variant) {
+    if (!variant) return false;
+    const inStock = variant.inStock !== false;
+    const stockCount = typeof variant.stockCount === 'number' ? variant.stockCount : (inStock ? 1 : 0);
+    return inStock && stockCount > 0;
+}
+
+function getVariantStockCount(variant) {
+    if (!variant) return 0;
+    const inStock = variant.inStock !== false;
+    return typeof variant.stockCount === 'number' ? variant.stockCount : (inStock ? 1 : 0);
+}
+
+function hasOutOfStockCartItems() {
+    return state.cart.some(item => {
+        const liveProd = state.products.find(p => p.id === item.product.id) || item.product;
+        const variants = liveProd.variants || [];
+        const liveVar = variants.find(v => v.id === item.variant.id) || variants[0] || item.variant;
+        const available = isVariantAvailable(liveVar);
+        const maxStock = getVariantStockCount(liveVar);
+        return !available || item.quantity > maxStock;
+    });
+}
+
+// --- FETCH PRODUCTS & REAL-TIME INVENTORY LISTENER ---
+function applyCatalogSnapshot(items) {
+    state.products = items.length > 0 ? items : FALLBACK_PRODUCTS;
+    state.products.forEach(p => {
+        if (state.selectedVariants[p.id] === undefined) {
+            state.selectedVariants[p.id] = 0;
+        }
+    });
+
+    renderCatalog();
+    renderCuratedPicks();
+    renderVaultPieces();
+    renderCartDrawer();
+    renderCheckoutSummary();
+
+    if (currentEditorialProduct) {
+        const refreshed = state.products.find(p => p.id === currentEditorialProduct.id);
+        if (refreshed) {
+            currentEditorialProduct = refreshed;
+            updateEditorialPageContent();
+        }
+    }
+}
+
 async function fetchCatalog() {
     try {
         const querySnapshot = await getDocs(collection(db, "products"));
@@ -411,18 +460,27 @@ async function fetchCatalog() {
         querySnapshot.forEach((docSnap) => {
             items.push({ id: docSnap.id, ...docSnap.data() });
         });
-        state.products = items.length > 0 ? items : FALLBACK_PRODUCTS;
+        applyCatalogSnapshot(items);
     } catch (error) {
         console.warn("Firestore offline or empty. Utilizing curated catalog:", error);
-        state.products = FALLBACK_PRODUCTS;
+        applyCatalogSnapshot(FALLBACK_PRODUCTS);
     }
 
-    // Default first variant for all items
-    state.products.forEach(p => {
-        if (!state.selectedVariants[p.id]) {
-            state.selectedVariants[p.id] = 0;
-        }
-    });
+    try {
+        onSnapshot(collection(db, "products"), (querySnapshot) => {
+            const items = [];
+            querySnapshot.forEach((docSnap) => {
+                items.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            if (items.length > 0) {
+                applyCatalogSnapshot(items);
+            }
+        }, (err) => {
+            console.warn("Real-time products snapshot warning:", err);
+        });
+    } catch (snapErr) {
+        console.warn("Could not bind real-time products listener:", snapErr);
+    }
 }
 
 const SUB_CATEGORIES = {
@@ -627,12 +685,14 @@ function renderCuratedPicks() {
             product.category === 'HAND_PAINTED' ||
             (product.fullName && product.fullName.toLowerCase().includes('hand-paint'));
         const badgeLabel = isArtclusive ? '1-OF-1 ARTCLUSIVE' : (product.isCurated ? "CURATOR'S PICK" : 'HAUTE EDIT');
+        const isSoldOut = !isVariantAvailable(variant);
 
         return `
-            <div class="curated-rail-card" data-curated-id="${product.id}" title="${product.fullName}">
+            <div class="curated-rail-card ${isSoldOut ? 'curated-card-sold-out' : ''}" data-curated-id="${product.id}" title="${product.fullName}">
                 <div class="curated-card-media" style="background-color: ${variant.canvasHex || '#1C1A18'};">
-                    <img src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}" loading="lazy">
+                    <img src="${variant.imageUrl || product.imageUrl}" class="${isSoldOut ? 'card-img-dimmed' : ''}" alt="${product.fullName}" loading="lazy">
                     <div class="curated-badge-pill ${isArtclusive ? 'gold-badge' : ''}">${badgeLabel}</div>
+                    ${isSoldOut ? `<div class="curated-out-of-stock-badge">OUT OF STOCK</div>` : ''}
                     <div class="curated-card-overlay">
                         <div class="curated-card-title">${product.editorialTitle}</div>
                         <div class="curated-card-sub">${product.fullName}</div>
@@ -888,11 +948,13 @@ function renderCatalog() {
         const activeIdx = state.selectedVariants[product.id] || 0;
         const variant = product.variants[activeIdx] || product.variants[0];
         const isWishlisted = state.wishlist.has(product.id);
+        const isSoldOut = !isVariantAvailable(variant);
 
         return `
-            <article class="product-card" data-id="${product.id}">
+            <article class="product-card ${isSoldOut ? 'product-card-sold-out' : ''}" data-id="${product.id}">
                 <div class="card-image-box" style="background-color: ${variant.canvasHex || '#2A2825'};">
-                    <img class="product-card-img" src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}">
+                    <img class="product-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}">
+                    ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : ''}
                     <button class="wishlist-btn ${isWishlisted ? 'active' : ''}" data-wishlist-id="${product.id}" title="Save to Wishlist">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="${isWishlisted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
@@ -917,7 +979,7 @@ function renderCatalog() {
                             </div>
                             <span class="card-price">₹${product.priceInr.toLocaleString('en-IN')}</span>
                         </div>
-                        <button class="quick-add-btn" data-add-id="${product.id}" title="Add to Bag">
+                        <button class="quick-add-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-add-id="${product.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''} title="${isSoldOut ? 'Out of Stock' : 'Add to Bag'}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
                                 <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -966,7 +1028,13 @@ function attachCardEventListeners() {
     document.querySelectorAll('.quick-add-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (btn.disabled) return;
             const id = btn.dataset.addId;
+            const product = state.products.find(p => p.id === id);
+            const variantIdx = state.selectedVariants[id] || 0;
+            const variant = product?.variants?.[variantIdx] || product?.variants?.[0];
+            if (!isVariantAvailable(variant)) return;
+
             btn.classList.add('animating');
             const originalSvg = btn.innerHTML;
             btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
@@ -1024,10 +1092,19 @@ function addToCart(productId) {
     if (!product) return;
 
     const variantIdx = state.selectedVariants[productId] || 0;
-    const variant = product.variants[variantIdx];
+    const variant = (product.variants && product.variants[variantIdx]) || (product.variants && product.variants[0]);
+    if (!variant || !isVariantAvailable(variant)) {
+        console.warn("Attempted to add out-of-stock piece to bag:", productId, variant?.id);
+        return;
+    }
 
+    const maxStock = getVariantStockCount(variant);
     const existingIndex = state.cart.findIndex(item => item.product.id === productId && item.variant.id === variant.id);
     if (existingIndex > -1) {
+        if (state.cart[existingIndex].quantity >= maxStock) {
+            console.warn("Maximum available stock reached for:", variant?.id);
+            return;
+        }
         state.cart[existingIndex].quantity += 1;
     } else {
         state.cart.push({ product, variant, quantity: 1 });
@@ -1039,6 +1116,18 @@ function addToCart(productId) {
 }
 
 function updateCartQuantity(index, delta) {
+    if (!state.cart[index]) return;
+    if (delta > 0) {
+        const item = state.cart[index];
+        const liveProd = state.products.find(p => p.id === item.product.id) || item.product;
+        const variants = liveProd.variants || [];
+        const liveVar = variants.find(v => v.id === item.variant.id) || variants[0] || item.variant;
+        const maxStock = getVariantStockCount(liveVar);
+        if (!isVariantAvailable(liveVar) || item.quantity >= maxStock) {
+            console.warn("Cannot increase quantity beyond available stock");
+            return;
+        }
+    }
     state.cart[index].quantity += delta;
     if (state.cart[index].quantity <= 0) {
         state.cart.splice(index, 1);
@@ -1046,6 +1135,9 @@ function updateCartQuantity(index, delta) {
     localStorage.setItem('artpoure_cart', JSON.stringify(state.cart));
     updateBadges();
     renderCartDrawer();
+    if (elements.checkoutPage && elements.checkoutPage.style.display !== 'none') {
+        renderCheckoutSummary();
+    }
 }
 
 function openCartDrawer() {
@@ -1066,24 +1158,41 @@ function renderCartDrawer() {
             </div>
         `;
         elements.cartTotalSum.textContent = "₹0";
+        if (elements.proceedCheckoutBtn) {
+            elements.proceedCheckoutBtn.disabled = false;
+            elements.proceedCheckoutBtn.textContent = "PROCEED TO CHECKOUT";
+            elements.proceedCheckoutBtn.classList.remove('btn-sold-out');
+        }
         return;
     }
 
     let total = 0;
+    let anyOutOfStock = false;
     elements.cartItemsList.innerHTML = state.cart.map((item, index) => {
         const itemTotal = item.product.priceInr * item.quantity;
         total += itemTotal;
+
+        // Cross-check live stock
+        const liveProd = state.products.find(p => p.id === item.product.id) || item.product;
+        const variants = liveProd.variants || [];
+        const liveVar = variants.find(v => v.id === item.variant.id) || variants[0] || item.variant;
+        const available = isVariantAvailable(liveVar);
+        const maxStock = getVariantStockCount(liveVar);
+        const isOutOfStock = !available || item.quantity > maxStock;
+        if (isOutOfStock) anyOutOfStock = true;
+
         return `
-            <div class="cart-item-card">
-                <img src="${item.variant.imageUrl}" class="cart-item-img" alt="${item.product.fullName}">
+            <div class="cart-item-card ${isOutOfStock ? 'cart-item-out-of-stock' : ''}">
+                <img src="${item.variant.imageUrl}" class="cart-item-img ${isOutOfStock ? 'card-img-dimmed' : ''}" alt="${item.product.fullName}">
                 <div class="cart-item-info">
                     <p class="cart-item-title">${item.product.editorialTitle}</p>
                     <p style="font-size: 10px; color: var(--text-secondary);">${item.variant.colorName}</p>
+                    ${isOutOfStock ? `<div class="cart-item-stock-warning">OUT OF STOCK — Remove to continue</div>` : ''}
                     <p class="cart-item-price">₹${itemTotal.toLocaleString('en-IN')}</p>
                     <div style="display: flex; gap: 8px; align-items: center; margin-top: 6px;">
                         <button class="cart-qty-btn" data-index="${index}" data-delta="-1" style="background: var(--surface); border: 1px solid var(--border); border-radius: 4px; width: 22px; height: 22px; cursor: pointer;">-</button>
                         <span style="font-size: 12px; font-weight: 700;">${item.quantity}</span>
-                        <button class="cart-qty-btn" data-index="${index}" data-delta="1" style="background: var(--surface); border: 1px solid var(--border); border-radius: 4px; width: 22px; height: 22px; cursor: pointer;">+</button>
+                        <button class="cart-qty-btn" data-index="${index}" data-delta="1" ${isOutOfStock || item.quantity >= maxStock ? 'disabled style="background: var(--surface); border: 1px solid var(--border); border-radius: 4px; width: 22px; height: 22px; cursor: not-allowed; opacity: 0.3;"' : 'style="background: var(--surface); border: 1px solid var(--border); border-radius: 4px; width: 22px; height: 22px; cursor: pointer;"'}>+</button>
                     </div>
                 </div>
             </div>
@@ -1092,8 +1201,21 @@ function renderCartDrawer() {
 
     elements.cartTotalSum.textContent = `₹${total.toLocaleString('en-IN')}`;
 
+    if (elements.proceedCheckoutBtn) {
+        if (anyOutOfStock) {
+            elements.proceedCheckoutBtn.disabled = true;
+            elements.proceedCheckoutBtn.textContent = "REMOVE OUT OF STOCK ITEMS";
+            elements.proceedCheckoutBtn.classList.add('btn-sold-out');
+        } else {
+            elements.proceedCheckoutBtn.disabled = false;
+            elements.proceedCheckoutBtn.textContent = "PROCEED TO CHECKOUT";
+            elements.proceedCheckoutBtn.classList.remove('btn-sold-out');
+        }
+    }
+
     document.querySelectorAll('.cart-qty-btn').forEach(btn => {
         btn.addEventListener('click', () => {
+            if (btn.disabled) return;
             const index = parseInt(btn.dataset.index, 10);
             const delta = parseInt(btn.dataset.delta, 10);
             updateCartQuantity(index, delta);
@@ -1407,6 +1529,10 @@ function setupEventListeners() {
     // Checkout Navigation & Interactions
     if (elements.proceedCheckoutBtn) {
         elements.proceedCheckoutBtn.addEventListener('click', () => {
+            if (hasOutOfStockCartItems()) {
+                alert("Please remove sold out items from your shopping bag before proceeding to checkout.");
+                return;
+            }
             openCheckoutScreen();
         });
     }
@@ -2323,6 +2449,7 @@ function calculateClientPricing(cartItems, promoCode = state.appliedPromoCode) {
 function renderCheckoutSummary() {
     const pricing = calculateClientPricing(state.cart, state.appliedPromoCode);
     const isCod = state.selectedPaymentMethod === 'COD';
+    const anyOutOfStock = hasOutOfStockCartItems();
 
     if (elements.checkoutItemPreviews) {
         if (state.cart.length === 0) {
@@ -2330,15 +2457,25 @@ function renderCheckoutSummary() {
                 <div style="font-size: 11px; color: var(--text-secondary); padding: 12px 0;">No items in bag.</div>
             `;
         } else {
-            elements.checkoutItemPreviews.innerHTML = state.cart.map(item => `
-                <div class="checkout-item-preview">
-                    <img src="${item.variant.imageUrl}" alt="${item.product.fullName}">
+            elements.checkoutItemPreviews.innerHTML = state.cart.map(item => {
+                const liveProd = state.products.find(p => p.id === item.product.id) || item.product;
+                const variants = liveProd.variants || [];
+                const liveVar = variants.find(v => v.id === item.variant.id) || variants[0] || item.variant;
+                const available = isVariantAvailable(liveVar);
+                const maxStock = getVariantStockCount(liveVar);
+                const isOutOfStock = !available || item.quantity > maxStock;
+
+                return `
+                <div class="checkout-item-preview ${isOutOfStock ? 'checkout-item-sold-out' : ''}">
+                    <img src="${item.variant.imageUrl}" class="${isOutOfStock ? 'card-img-dimmed' : ''}" alt="${item.product.fullName}">
                     <div class="checkout-item-meta">
                         <div class="item-title">${item.product.editorialTitle} • ${item.variant.colorName}</div>
+                        ${isOutOfStock ? `<div class="checkout-stock-alert">OUT OF STOCK — Remove to place order</div>` : ''}
                         <div class="item-qty-price">Qty: ${item.quantity} × ₹${item.product.priceInr.toLocaleString('en-IN')} = ₹${(item.product.priceInr * item.quantity).toLocaleString('en-IN')}</div>
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
     }
 
@@ -2376,7 +2513,15 @@ function renderCheckoutSummary() {
     }
 
     if (elements.placeOrderBtnText) {
-        if (isCod) {
+        if (anyOutOfStock) {
+            elements.placeOrderBtnText.textContent = "ITEM OUT OF STOCK";
+            if (elements.placeOrderBtn) {
+                elements.placeOrderBtn.disabled = true;
+                elements.placeOrderBtn.style.opacity = '0.5';
+                elements.placeOrderBtn.style.cursor = 'not-allowed';
+                elements.placeOrderBtn.classList.add('btn-sold-out');
+            }
+        } else if (isCod) {
             elements.placeOrderBtnText.textContent = `CONFIRM CASH ON DELIVERY (₹${pricing.grandTotal.toLocaleString('en-IN')})`;
         } else {
             elements.placeOrderBtnText.textContent = `PAY ₹${pricing.grandTotal.toLocaleString('en-IN')} & CONFIRM ORDER`;
@@ -2424,12 +2569,22 @@ function selectPaymentMethod(method) {
 }
 
 function restorePlaceOrderBtn(grandTotal) {
+    const anyOutOfStock = hasOutOfStockCartItems();
     if (elements.placeOrderBtn) {
-        elements.placeOrderBtn.disabled = false;
-        elements.placeOrderBtn.style.opacity = '1';
-        elements.placeOrderBtn.style.cursor = 'pointer';
+        elements.placeOrderBtn.disabled = anyOutOfStock;
+        elements.placeOrderBtn.style.opacity = anyOutOfStock ? '0.5' : '1';
+        elements.placeOrderBtn.style.cursor = anyOutOfStock ? 'not-allowed' : 'pointer';
+        if (anyOutOfStock) {
+            elements.placeOrderBtn.classList.add('btn-sold-out');
+        } else {
+            elements.placeOrderBtn.classList.remove('btn-sold-out');
+        }
     }
     if (elements.placeOrderBtnText) {
+        if (anyOutOfStock) {
+            elements.placeOrderBtnText.textContent = "ITEM OUT OF STOCK";
+            return;
+        }
         const pricing = calculateClientPricing(state.cart, state.appliedPromoCode);
         const total = grandTotal !== undefined ? grandTotal : pricing.grandTotal;
         if (state.selectedPaymentMethod === 'COD') {
@@ -2541,6 +2696,11 @@ function handleOrderSuccessDisplay(orderId, paymentMethod, grandTotal, receiverN
 async function validateAndPlaceOrder() {
     if (state.cart.length === 0) {
         alert("Your shopping bag is empty. Please add items before placing an order.");
+        return;
+    }
+
+    if (hasOutOfStockCartItems()) {
+        alert("Some items in your shopping bag are out of stock. Please remove them before placing your order.");
         return;
     }
 
@@ -2989,11 +3149,13 @@ function renderVaultPieces() {
     elements.vaultGrid.innerHTML = vaultItems.map(item => {
         const variant = (item.variants && item.variants[0]) || {};
         const price = Number(item.priceInr || 0).toLocaleString('en-IN');
+        const isSoldOut = !isVariantAvailable(variant);
         return `
-            <div class="vault-card">
+            <div class="vault-card ${isSoldOut ? 'vault-card-sold-out' : ''}">
                 <div class="vault-card-img-wrap" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <span class="vault-tag">VAULT PIECE</span>
-                    <img src="${variant.imageUrl || item.imageUrl || ''}" class="vault-card-img" alt="${item.fullName || ''}">
+                    ${isSoldOut ? `<span class="vault-sold-tag">OUT OF STOCK</span>` : ''}
+                    <img src="${variant.imageUrl || item.imageUrl || ''}" class="vault-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" alt="${item.fullName || ''}">
                 </div>
                 <div class="vault-card-info">
                     <div>
@@ -3002,7 +3164,9 @@ function renderVaultPieces() {
                     </div>
                     <div class="vault-card-bottom">
                         <span class="vault-card-price">₹${price}</span>
-                        <button class="vault-reserve-btn" data-reserve-id="${item.id}">RESERVE</button>
+                        <button class="vault-reserve-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-reserve-id="${item.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''}>
+                            ${isSoldOut ? 'OUT OF STOCK' : 'RESERVE'}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3012,6 +3176,7 @@ function renderVaultPieces() {
     elements.vaultGrid.querySelectorAll('.vault-reserve-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (btn.disabled) return;
             const id = btn.dataset.reserveId;
             addToCart(id);
         });
@@ -3153,15 +3318,34 @@ function updateEditorialPageContent() {
         }
     }
 
-    // 1-of-1 Stock / Claimed State: When selected variant has inStock === false, disable Add to Bag & Buy Now
-    const isSoldOut = variant.inStock === false;
+    // 1-of-1 Stock / Claimed State: When selected variant has isAvailable === false, disable Add to Bag & Buy Now
+    const isSoldOut = !isVariantAvailable(variant);
+    if (heroBox) {
+        if (isSoldOut) {
+            heroBox.classList.add('media-dimmed');
+            let soldBadge = document.getElementById('editorialHeroSoldBadge');
+            if (!soldBadge) {
+                soldBadge = document.createElement('div');
+                soldBadge.id = 'editorialHeroSoldBadge';
+                soldBadge.className = 'editorial-hero-sold-badge';
+                soldBadge.textContent = 'OUT OF STOCK';
+                heroBox.appendChild(soldBadge);
+            }
+            soldBadge.style.display = 'block';
+        } else {
+            heroBox.classList.remove('media-dimmed');
+            const soldBadge = document.getElementById('editorialHeroSoldBadge');
+            if (soldBadge) soldBadge.style.display = 'none';
+        }
+    }
+
     const addBagBtn = document.getElementById('editorialAddBagBtn');
     const buyNowBtn = document.getElementById('editorialBuyNowBtn');
     if (addBagBtn) {
         addBagBtn.disabled = isSoldOut;
         const span = addBagBtn.querySelector('span');
         if (span) {
-            span.textContent = isSoldOut ? 'SOLD OUT • ARCHIVED' : 'ADD TO BAG';
+            span.textContent = isSoldOut ? 'OUT OF STOCK' : 'ADD TO BAG';
         }
         const svg = addBagBtn.querySelector('svg');
         if (svg) svg.style.display = isSoldOut ? 'none' : 'inline-block';
@@ -3232,7 +3416,7 @@ function setupEditorialPageEvents() {
             if (currentEditorialProduct) {
                 const variants = currentEditorialProduct.variants || [];
                 const variant = variants[currentEditorialVariantIdx] || variants[0] || {};
-                if (variant.inStock === false) return;
+                if (!isVariantAvailable(variant)) return;
                 addToCart(currentEditorialProduct.id);
                 const cartBadge = document.getElementById('editorialCartBadge');
                 if (cartBadge) {
@@ -3251,10 +3435,10 @@ function setupEditorialPageEvents() {
             if (currentEditorialProduct) {
                 const variants = currentEditorialProduct.variants || [];
                 const variant = variants[currentEditorialVariantIdx] || variants[0] || {};
-                if (variant.inStock === false) return;
+                if (!isVariantAvailable(variant)) return;
                 addToCart(currentEditorialProduct.id);
                 closeEditorialPage();
-                openCheckoutPage();
+                openCheckoutScreen();
             }
         });
     }

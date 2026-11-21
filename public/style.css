@@ -4089,3 +4089,126 @@ html.embedded-view .policy-container {
     }
 }
 
+/* ==========================================================================
+   OUT OF STOCK UI BADGES, DISABLED STATES & LIVE INVENTORY OVERLAYS
+   ========================================================================== */
+.card-out-of-stock-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(183, 28, 28, 0.94);
+    color: #ffffff;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 4px 9px;
+    border-radius: 6px;
+    border: 0.8px solid rgba(255, 255, 255, 0.4);
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.curated-out-of-stock-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(183, 28, 28, 0.94);
+    color: #ffffff;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 0.8px solid rgba(255, 255, 255, 0.4);
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+.vault-sold-tag {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(183, 28, 28, 0.94);
+    color: #ffffff;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 0.8px solid rgba(255, 255, 255, 0.4);
+    z-index: 10;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.editorial-hero-sold-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(183, 28, 28, 0.94);
+    color: #ffffff;
+    font-family: var(--font-sans, -apple-system, sans-serif);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    padding: 6px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    z-index: 25;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.card-img-dimmed,
+.editorial-hero-box.media-dimmed .editorial-hero-img {
+    opacity: 0.50 !important;
+    filter: grayscale(25%);
+}
+
+.quick-add-btn.btn-sold-out,
+.vault-reserve-btn.btn-sold-out,
+.checkout-btn.btn-sold-out,
+.editorial-bag-btn.btn-sold-out {
+    background: var(--surface-elevated, #2A2825) !important;
+    color: var(--text-secondary, #9E9E9E) !important;
+    cursor: not-allowed !important;
+    opacity: 0.45 !important;
+    border-color: var(--border, #3E3C38) !important;
+    pointer-events: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.cart-item-stock-warning,
+.checkout-stock-alert {
+    color: #E53935;
+    font-size: 10px;
+    font-weight: 700;
+    margin-top: 4px;
+    letter-spacing: 0.3px;
+}
+
+.cart-item-out-of-stock {
+    border: 1px solid rgba(229, 57, 53, 0.55) !important;
+    background: rgba(229, 57, 53, 0.06) !important;
+}
+
+.checkout-item-sold-out {
+    border-left: 3px solid #E53935 !important;
+    padding-left: 8px;
+}
+
+
