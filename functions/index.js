@@ -553,14 +553,20 @@ exports.createRazorpayOrder = onCall(
 
         const uid = request.auth.uid;
 
-        // One-time use guard for FIRST10 promo code per user
+        // One-time use guard for FIRST10 promo code per user (requires zero composite indexes)
         if (promoCode === "FIRST10" && uid) {
-            const priorPromoSnap = await db.collection("orders")
+            const userOrdersSnap = await db.collection("orders")
                 .where("userId", "==", uid)
-                .where("pricing.promoCode", "==", "FIRST10")
-                .limit(1)
                 .get();
-            if (!priorPromoSnap.empty) {
+
+            const hasUsedFirst10 = userOrdersSnap.docs.some(doc => {
+                const d = doc.data() || {};
+                const st = (d.status || "").toUpperCase();
+                const isConfirmedOrder = st === "CONFIRMED" || st === "PACKED" || st === "SHIPPED" || st === "DELIVERED";
+                return isConfirmedOrder && d.pricing && d.pricing.promoCode === "FIRST10";
+            });
+
+            if (hasUsedFirst10) {
                 throw new HttpsError(
                     "failed-precondition",
                     "The promo code FIRST10 has already been used on a previous order by this account."
@@ -1034,14 +1040,20 @@ exports.createCodOrder = onCall(
 
         const uid = request.auth ? request.auth.uid : null;
 
-        // One-time use guard for FIRST10 promo code per user
+        // One-time use guard for FIRST10 promo code per user (requires zero composite indexes)
         if (promoCode === "FIRST10" && uid) {
-            const priorPromoSnap = await db.collection("orders")
+            const userOrdersSnap = await db.collection("orders")
                 .where("userId", "==", uid)
-                .where("pricing.promoCode", "==", "FIRST10")
-                .limit(1)
                 .get();
-            if (!priorPromoSnap.empty) {
+
+            const hasUsedFirst10 = userOrdersSnap.docs.some(doc => {
+                const d = doc.data() || {};
+                const st = (d.status || "").toUpperCase();
+                const isConfirmedOrder = st === "CONFIRMED" || st === "PACKED" || st === "SHIPPED" || st === "DELIVERED";
+                return isConfirmedOrder && d.pricing && d.pricing.promoCode === "FIRST10";
+            });
+
+            if (hasUsedFirst10) {
                 throw new HttpsError(
                     "failed-precondition",
                     "The promo code FIRST10 has already been used on a previous order by this account."
