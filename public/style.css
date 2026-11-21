@@ -4175,36 +4175,35 @@ html.embedded-view .policy-container {
 /* ==========================================================================
    STOCK SCARCITY INDICATORS & REAL-TIME PRESENCE PILLS
    ========================================================================== */
-.card-scarcity-badge,
-.curated-scarcity-badge,
-.vault-scarcity-tag {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(141, 110, 99, 0.94);
+.card-action-group,
+.vault-action-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.card-scarcity-pill,
+.vault-scarcity-pill,
+.curated-scarcity-pill {
+    font-size: 7.5px;
+    font-weight: 600;
     color: #FFF8E1;
-    font-family: var(--font-sans, -apple-system, sans-serif);
-    font-size: 8.5px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    padding: 3px 8px;
-    border-radius: 6px;
+    background: rgba(141, 110, 99, 0.94);
     border: 0.8px solid rgba(197, 160, 89, 0.6);
-    z-index: 10;
-    pointer-events: none;
+    padding: 2px 6px;
+    border-radius: 4px;
     white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    letter-spacing: 0.3px;
+    line-height: 1.2;
 }
 
-.curated-scarcity-badge {
-    font-size: 8px;
-    padding: 3px 7px;
-}
-
-.vault-scarcity-tag {
-    font-size: 9px;
-    padding: 4px 10px;
+.curated-card-bottom-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 6px;
 }
 
 .editorial-stock-presence-row {

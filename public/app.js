@@ -692,11 +692,14 @@ function renderCuratedPicks() {
                 <div class="curated-card-media" style="background-color: ${variant.canvasHex || '#1C1A18'};">
                     <img src="${variant.imageUrl || product.imageUrl}" class="${isSoldOut ? 'card-img-dimmed' : ''}" alt="${product.fullName}" loading="lazy">
                     <div class="curated-badge-pill ${isArtclusive ? 'gold-badge' : ''}">${badgeLabel}</div>
-                    ${isSoldOut ? `<div class="curated-out-of-stock-badge">OUT OF STOCK</div>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="curated-scarcity-badge">Only ${getVariantStockCount(variant)} left</div>` : '')}
+                    ${isSoldOut ? `<div class="curated-out-of-stock-badge">OUT OF STOCK</div>` : ''}
                     <div class="curated-card-overlay">
                         <div class="curated-card-title">${product.editorialTitle}</div>
                         <div class="curated-card-sub">${product.fullName}</div>
-                        <div class="curated-card-price">₹${product.priceInr.toLocaleString('en-IN')}</div>
+                        <div class="curated-card-bottom-row">
+                            <div class="curated-card-price">₹${product.priceInr.toLocaleString('en-IN')}</div>
+                            ${!isSoldOut && getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="curated-scarcity-pill">Only ${getVariantStockCount(variant)} in stock</div>` : ''}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -954,7 +957,7 @@ function renderCatalog() {
             <article class="product-card ${isSoldOut ? 'product-card-sold-out' : ''}" data-id="${product.id}">
                 <div class="card-image-box" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <img class="product-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}">
-                    ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="card-scarcity-badge">Only ${getVariantStockCount(variant)} left</div>` : '')}
+                    ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : ''}
                     <button class="wishlist-btn ${isWishlisted ? 'active' : ''}" data-wishlist-id="${product.id}" title="Save to Wishlist">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="${isWishlisted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
                             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
@@ -979,13 +982,16 @@ function renderCatalog() {
                             </div>
                             <span class="card-price">₹${product.priceInr.toLocaleString('en-IN')}</span>
                         </div>
-                        <button class="quick-add-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-add-id="${product.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''} title="${isSoldOut ? 'Out of Stock' : 'Add to Bag'}">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                                <line x1="3" y1="6" x2="21" y2="6"></line>
-                                <path d="M16 10a4 4 0 0 1-8 0"></path>
-                            </svg>
-                        </button>
+                        <div class="card-action-group">
+                            ${!isSoldOut && getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="card-scarcity-pill">Only ${getVariantStockCount(variant)} in stock</div>` : ''}
+                            <button class="quick-add-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-add-id="${product.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''} title="${isSoldOut ? 'Out of Stock' : 'Add to Bag'}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                                    <path d="M16 10a4 4 0 0 1-8 0"></path>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </article>
@@ -3154,7 +3160,7 @@ function renderVaultPieces() {
             <div class="vault-card ${isSoldOut ? 'vault-card-sold-out' : ''}">
                 <div class="vault-card-img-wrap" style="background-color: ${variant.canvasHex || '#2A2825'};">
                     <span class="vault-tag">VAULT PIECE</span>
-                    ${isSoldOut ? `<span class="vault-sold-tag">OUT OF STOCK</span>` : (getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<span class="vault-scarcity-tag">Only ${getVariantStockCount(variant)} left</span>` : '')}
+                    ${isSoldOut ? `<span class="vault-sold-tag">OUT OF STOCK</span>` : ''}
                     <img src="${variant.imageUrl || item.imageUrl || ''}" class="vault-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" alt="${item.fullName || ''}">
                 </div>
                 <div class="vault-card-info">
@@ -3164,9 +3170,12 @@ function renderVaultPieces() {
                     </div>
                     <div class="vault-card-bottom">
                         <span class="vault-card-price">₹${price}</span>
-                        <button class="vault-reserve-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-reserve-id="${item.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''}>
-                            ${isSoldOut ? 'OUT OF STOCK' : 'RESERVE'}
-                        </button>
+                        <div class="vault-action-group">
+                            ${!isSoldOut && getVariantStockCount(variant) >= 1 && getVariantStockCount(variant) <= 3 ? `<div class="vault-scarcity-pill">Only ${getVariantStockCount(variant)} in stock</div>` : ''}
+                            <button class="vault-reserve-btn ${isSoldOut ? 'btn-sold-out' : ''}" data-reserve-id="${item.id}" ${isSoldOut ? 'disabled aria-disabled="true"' : ''}>
+                                ${isSoldOut ? 'OUT OF STOCK' : 'RESERVE'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
