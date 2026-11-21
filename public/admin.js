@@ -1041,6 +1041,12 @@ function renderOrdersList() {
                     </div>
                 </div>
 
+                ${(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED') ? `
+                    <div style="background: rgba(229, 57, 53, 0.15); border: 1px solid #E53935; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: #FFCDD2; font-size: 13px; font-weight: 600;">
+                        ⚠️ <strong>STOCK CONFLICT DETECTED:</strong> ${ord.conflictReason || '1-of-1 piece was claimed in another checkout. Please issue an immediate refund in Razorpay Dashboard.'}
+                    </div>
+                ` : ''}
+
                 <div class="order-card-grid">
                     <div class="order-info-column">
                         <span class="order-info-label">Customer</span>
@@ -1084,6 +1090,7 @@ function renderOrdersList() {
                             <option value="SHIPPED" ${fulfillmentStatus === 'SHIPPED' ? 'selected' : ''}>SHIPPED</option>
                             <option value="DELIVERED" ${fulfillmentStatus === 'DELIVERED' ? 'selected' : ''}>DELIVERED</option>
                             <option value="CANCELLED" ${fulfillmentStatus === 'CANCELLED' ? 'selected' : ''}>CANCELLED</option>
+                            <option value="CONFLICT_REFUND_REQUIRED" ${fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED' ? 'selected' : ''}>CONFLICT: REFUND REQUIRED</option>
                         </select>
                     </div>
 

@@ -1112,6 +1112,12 @@ body {
     border: 1px solid var(--status-red);
 }
 
+.status-badge.conflict_refund_required {
+    background: var(--status-red-bg);
+    color: var(--status-red);
+    border: 1px solid var(--status-red);
+}
+
 .order-card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
