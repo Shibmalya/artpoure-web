@@ -3316,6 +3316,20 @@ body.artclusive-mode .brand-title {
     background: var(--surface-elevated);
 }
 
+.editorial-bag-btn.btn-sold-out,
+.editorial-bag-btn:disabled,
+.editorial-buynow-btn.btn-sold-out,
+.editorial-buynow-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: var(--surface-elevated) !important;
+    border-color: var(--border) !important;
+    color: var(--text-secondary) !important;
+    pointer-events: none;
+    box-shadow: none;
+    transform: none;
+}
+
 .editorial-buynow-btn {
     flex: 1;
     height: 48px;

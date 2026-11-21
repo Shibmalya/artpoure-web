@@ -44,7 +44,10 @@ async function getAuthoritativeProduct(productId) {
             return {
                 id: productId,
                 priceInr: Number(data.priceInr || data.price || 0),
-                title: data.editorialTitle || data.fullName || data.title || productId
+                title: data.editorialTitle || data.fullName || data.title || productId,
+                category: data.category || "",
+                variants: Array.isArray(data.variants) ? data.variants : [],
+                inStock: data.inStock !== false
             };
         }
     } catch (e) {
@@ -54,11 +57,102 @@ async function getAuthoritativeProduct(productId) {
     if (SERVER_CATALOG_PRICING[productId]) {
         return {
             id: productId,
-            ...SERVER_CATALOG_PRICING[productId]
+            ...SERVER_CATALOG_PRICING[productId],
+            category: "SAREES",
+            variants: [],
+            inStock: true
         };
     }
 
     return null;
+}
+
+/**
+ * Idempotently locks stock for 1-of-1 ArtClusive / CUSTOM pieces upon payment confirmation.
+ * Prevents double-execution between verifyRazorpayPayment and razorpayWebhook.
+ */
+async function lockArtClusiveStockForOrder(orderRef, orderData) {
+    if (!orderData || orderData.stockLocked === true) {
+        return;
+    }
+
+    const items = orderData.items || [];
+    if (!Array.isArray(items) || items.length === 0) {
+        if (orderRef) {
+            await orderRef.update({ stockLocked: true });
+        }
+        return;
+    }
+
+    for (const item of items) {
+        const pid = item.productId || item.id;
+        if (!pid) continue;
+
+        try {
+            const productRef = db.collection("products").doc(pid);
+            const productSnap = await productRef.get();
+            if (!productSnap.exists) continue;
+
+            const productData = productSnap.data() || {};
+            const rawCategory = (productData.category || "").toString().trim().toUpperCase();
+            const fullName = (productData.fullName || productData.editorialTitle || productData.title || "").toString();
+
+            // Strict rule: Only auto-lock if product category is "CUSTOM" (or hand-painted 1-of-1 pieces).
+            // Do NOT lock normal catalog sarees (e.g. Category.SAREES).
+            const isArtClusive = rawCategory === "CUSTOM" ||
+                rawCategory.includes("HAND") ||
+                fullName.toLowerCase().includes("hand-paint") ||
+                fullName.toLowerCase().includes("hand-print");
+
+            if (!isArtClusive) {
+                continue;
+            }
+
+            const variants = Array.isArray(productData.variants) ? [...productData.variants] : [];
+            if (variants.length > 0) {
+                const targetVariantId = item.variantId || item.selectedVariantId;
+                const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+
+                let matchedIdx = -1;
+                if (targetVariantId) {
+                    matchedIdx = variants.findIndex(v => v && v.id === targetVariantId);
+                }
+                if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                    matchedIdx = variants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                }
+                if (matchedIdx === -1) {
+                    matchedIdx = 0;
+                }
+
+                if (matchedIdx >= 0 && variants[matchedIdx]) {
+                    variants[matchedIdx] = {
+                        ...variants[matchedIdx],
+                        inStock: false
+                    };
+                    await productRef.update({
+                        variants: variants,
+                        updatedAt: FieldValue.serverTimestamp()
+                    });
+                    console.log(`Stock locked for 1-of-1 ArtClusive product ${pid}, variant: ${variants[matchedIdx].colorName || matchedIdx}.`);
+                }
+            } else {
+                await productRef.update({
+                    inStock: false,
+                    updatedAt: FieldValue.serverTimestamp()
+                });
+                console.log(`Stock locked for 1-of-1 ArtClusive product ${pid} (single item).`);
+            }
+        } catch (err) {
+            console.error(`Failed to lock stock for product ${pid}:`, err);
+        }
+    }
+
+    if (orderRef) {
+        await orderRef.update({
+            stockLocked: true,
+            stockLockedAt: FieldValue.serverTimestamp()
+        });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,13 +265,43 @@ exports.createRazorpayOrder = onCall(
                 );
             }
 
+            // Reject if 1-of-1 selected variant or product is already claimed / out of stock
+            const targetVariantId = item.variantId || item.selectedVariantId;
+            const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+            const variants = product.variants || [];
+
+            let matchedVariant = null;
+            if (targetVariantId) {
+                matchedVariant = variants.find(v => v && v.id === targetVariantId);
+            }
+            if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                matchedVariant = variants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+            }
+            if (!matchedVariant && variants.length > 0) {
+                matchedVariant = variants[0];
+            }
+
+            if (matchedVariant && matchedVariant.inStock === false) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "This 1-of-1 piece has just been claimed."
+                );
+            }
+            if (product.inStock === false) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "This 1-of-1 piece has just been claimed."
+                );
+            }
+
             const itemTotal = product.priceInr * qty;
             subtotal += itemTotal;
 
             verifiedItems.push({
                 productId: pid,
+                variantId: targetVariantId || (matchedVariant ? matchedVariant.id : ""),
                 title: product.title,
-                variant: item.variant || item.colorName || "Standard",
+                variant: (matchedVariant && matchedVariant.colorName) || item.variant || item.colorName || "Standard",
                 quantity: qty,
                 unitPriceInr: product.priceInr,
                 totalInr: itemTotal
@@ -317,6 +441,9 @@ exports.verifyRazorpayPayment = onCall(
         }
 
         await orderRef.update(updateData);
+
+        // Auto-lock stock for 1-of-1 ArtClusive / CUSTOM pieces
+        await lockArtClusiveStockForOrder(orderRef, currentData);
 
         // Clear user cart in Firestore if authenticated
         if (request.auth && request.auth.uid) {
@@ -520,6 +647,8 @@ exports.razorpayWebhook = onRequest(
                             });
                             console.log(`Order ${orderSnap.id} confirmed via webhook with paymentStatus ${targetStatus}.`);
                         }
+                        // Lock 1-of-1 stock idempotently
+                        await lockArtClusiveStockForOrder(orderSnap.ref, currentData);
                     }
                 } catch (updateErr) {
                     console.error("Error updating order via webhook:", updateErr);
@@ -643,6 +772,7 @@ exports.api = onRequest(
                         razorpayPaymentId: razorpay_payment_id,
                         paidAt: FieldValue.serverTimestamp()
                     });
+                    await lockArtClusiveStockForOrder(orderRef, currentData);
                 }
 
                 return res.status(200).json({ success: true, message: "Payment verified successfully" });

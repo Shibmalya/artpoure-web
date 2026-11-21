@@ -2670,7 +2670,8 @@ async function validateAndPlaceOrder() {
                     items: state.cart.map(i => ({
                         productId: i.product.id,
                         quantity: i.quantity,
-                        variant: i.variant.colorName
+                        variant: i.variant ? i.variant.colorName : "Standard",
+                        variantId: i.variant ? i.variant.id : null
                     })),
                     shippingAddress: {
                         receiverName,
@@ -2826,7 +2827,8 @@ async function validateAndPlaceOrder() {
             items: state.cart.map(i => ({
                 productId: i.product.id,
                 quantity: i.quantity,
-                variant: i.variant.colorName
+                variant: i.variant ? i.variant.colorName : "Standard",
+                variantId: i.variant ? i.variant.id : null
             })),
             shippingAddress: {
                 receiverName,
@@ -3107,6 +3109,34 @@ function updateEditorialPageContent() {
             swatches.style.display = 'none';
         }
     }
+
+    // 1-of-1 Stock / Claimed State: When selected variant has inStock === false, disable Add to Bag & Buy Now
+    const isSoldOut = variant.inStock === false;
+    const addBagBtn = document.getElementById('editorialAddBagBtn');
+    const buyNowBtn = document.getElementById('editorialBuyNowBtn');
+    if (addBagBtn) {
+        addBagBtn.disabled = isSoldOut;
+        const span = addBagBtn.querySelector('span');
+        if (span) {
+            span.textContent = isSoldOut ? 'SOLD OUT • ARCHIVED' : 'ADD TO BAG';
+        }
+        const svg = addBagBtn.querySelector('svg');
+        if (svg) svg.style.display = isSoldOut ? 'none' : 'inline-block';
+        if (isSoldOut) {
+            addBagBtn.classList.add('btn-sold-out');
+        } else {
+            addBagBtn.classList.remove('btn-sold-out');
+        }
+    }
+    if (buyNowBtn) {
+        buyNowBtn.disabled = isSoldOut;
+        buyNowBtn.style.display = isSoldOut ? 'none' : 'flex';
+        if (isSoldOut) {
+            buyNowBtn.classList.add('btn-sold-out');
+        } else {
+            buyNowBtn.classList.remove('btn-sold-out');
+        }
+    }
 }
 
 // Setup Editorial Page Action Deck Events
@@ -3157,6 +3187,9 @@ function setupEditorialPageEvents() {
     if (addBagBtn) {
         addBagBtn.addEventListener('click', () => {
             if (currentEditorialProduct) {
+                const variants = currentEditorialProduct.variants || [];
+                const variant = variants[currentEditorialVariantIdx] || variants[0] || {};
+                if (variant.inStock === false) return;
                 addToCart(currentEditorialProduct.id);
                 const cartBadge = document.getElementById('editorialCartBadge');
                 if (cartBadge) {
@@ -3173,6 +3206,9 @@ function setupEditorialPageEvents() {
     if (buyNowBtn) {
         buyNowBtn.addEventListener('click', () => {
             if (currentEditorialProduct) {
+                const variants = currentEditorialProduct.variants || [];
+                const variant = variants[currentEditorialVariantIdx] || variants[0] || {};
+                if (variant.inStock === false) return;
                 addToCart(currentEditorialProduct.id);
                 closeEditorialPage();
                 openCheckoutPage();
