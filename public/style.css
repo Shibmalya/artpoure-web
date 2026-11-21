@@ -31,19 +31,19 @@
 
 [data-theme="dark"] {
     /* Editorial Dark Theme Palette */
-    --canvas-bg: #121212;
+    --canvas-bg: #141311;
     --surface: #1E1D1B;
-    --surface-elevated: #2A2825;
-    --border: #383633;
-    --border-subtle: rgba(56, 54, 51, 0.7);
+    --surface-elevated: #262420;
+    --border: #2E2C28;
+    --border-subtle: rgba(46, 44, 40, 0.7);
     --text-primary: #F7F6F2;
-    --text-secondary: #A8A6A1;
-    --accent-gold: #E5C158;
-    --antique-gold: #B89758;
-    --dark-charcoal: #121212;
+    --text-secondary: #B5B0A8;
+    --accent-gold: #C9A96E;
+    --antique-gold: #9C8255;
+    --dark-charcoal: #141311;
     --pill-bg: rgba(30, 29, 27, 0.92);
-    --pill-border: rgba(56, 54, 51, 0.85);
-    --scrim-gradient: linear-gradient(180deg, rgba(18, 18, 18, 0.3) 0%, rgba(18, 18, 18, 0.94) 85%);
+    --pill-border: rgba(46, 44, 40, 0.85);
+    --scrim-gradient: linear-gradient(180deg, rgba(20, 19, 17, 0.3) 0%, rgba(20, 19, 17, 0.94) 85%);
     --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.45);
     --shadow-floating: 0 12px 36px rgba(0, 0, 0, 0.55);
 }
@@ -3774,6 +3774,15 @@ body.artclusive-mode .brand-title {
     min-height: 100vh;
 }
 
+/* Embedded view in Android PolicyWebViewSheet */
+html.embedded-view .policy-header-bar {
+    display: none !important;
+}
+
+html.embedded-view .policy-container {
+    padding-top: 20px;
+}
+
 .policy-header-bar {
     position: sticky;
     top: 0;
@@ -3892,6 +3901,24 @@ body.artclusive-mode .brand-title {
     border-radius: 12px;
     padding: 16px 18px;
     margin: 16px 0;
+}
+
+.policy-container a,
+.policy-section a {
+    color: var(--antique-gold);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color 0.2s ease;
+}
+
+[data-theme="dark"] .policy-container a,
+[data-theme="dark"] .policy-section a {
+    color: var(--accent-gold);
+}
+
+.policy-container a:hover,
+.policy-section a:hover {
+    color: var(--accent-gold);
 }
 
 .policy-page-footer {

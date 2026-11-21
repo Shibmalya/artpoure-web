@@ -9,10 +9,52 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
     <script>
         (function() {
-            const savedTheme = localStorage.getItem('artpoure_theme') || 'light';
-            document.documentElement.setAttribute('data-theme', savedTheme);
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const themeParam = params.get('theme');
+                const theme = (themeParam === 'dark' || themeParam === 'light')
+                    ? themeParam
+                    : (localStorage.getItem('artpoure_theme') || 'light');
+                document.documentElement.setAttribute('data-theme', theme);
+                if (params.get('embed') === '1') {
+                    document.documentElement.classList.add('embedded-view');
+                }
+            } catch (e) {
+                const saved = localStorage.getItem('artpoure_theme') || 'light';
+                document.documentElement.setAttribute('data-theme', saved);
+            }
         })();
     </script>
+    <style>
+        [data-theme="dark"] {
+            --canvas-bg: #141311;
+            --surface: #1E1D1B;
+            --surface-elevated: #262420;
+            --border: #2E2C28;
+            --border-subtle: rgba(46, 44, 40, 0.7);
+            --text-primary: #F7F6F2;
+            --text-secondary: #B5B0A8;
+            --accent-gold: #C9A96E;
+            --antique-gold: #9C8255;
+            --dark-charcoal: #141311;
+        }
+        .policy-container a,
+        .policy-section a {
+            color: #8C6D3F;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+        [data-theme="dark"] .policy-container a,
+        [data-theme="dark"] .policy-section a {
+            color: #C9A96E;
+        }
+        html.embedded-view .policy-header-bar {
+            display: none !important;
+        }
+        html.embedded-view .policy-container {
+            padding-top: 20px;
+        }
+    </style>
 </head>
 <body class="policy-page-body">
 
