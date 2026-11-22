@@ -981,11 +981,13 @@ function renderCatalog() {
         const variant = product.variants[activeIdx] || product.variants[0];
         const isWishlisted = state.wishlist.has(product.id);
         const isSoldOut = !isVariantAvailable(variant);
+        const imgUrl = variant.imageUrl || product.imageUrl || '';
+        const isCutout = imgUrl.includes('transparent') || imgUrl.includes('removebg');
 
         return `
             <article class="product-card ${isSoldOut ? 'product-card-sold-out' : ''}" data-id="${product.id}">
                 <div class="card-image-box" style="background-color: ${variant.canvasHex || '#2A2825'};">
-                    <img class="product-card-img ${isSoldOut ? 'card-img-dimmed' : ''}" src="${variant.imageUrl || product.imageUrl}" alt="${product.fullName}">
+                    <img class="product-card-img ${isCutout ? 'card-img-cutout' : ''} ${isSoldOut ? 'card-img-dimmed' : ''}" src="${imgUrl}" alt="${product.fullName}">
                     ${isSoldOut ? `<div class="card-out-of-stock-badge">OUT OF STOCK</div>` : ''}
                     <button class="wishlist-btn ${isWishlisted ? 'active' : ''}" data-wishlist-id="${product.id}" title="Save to Wishlist">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="${isWishlisted ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
