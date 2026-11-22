@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="admin.css?v=20261122_razorpay_hub">
 </head>
 <body>
     <!-- AUTH GATE: Sign In Modal -->
@@ -82,6 +82,10 @@
             <button class="nav-tab-btn" data-tab="consultations">
                 <span class="tab-icon">❦</span>
                 <span>Consultations (<span id="consultationsCountBadge">0</span>)</span>
+            </button>
+            <button class="nav-tab-btn" data-tab="razorpay">
+                <span class="tab-icon">⚡</span>
+                <span>Razorpay</span>
             </button>
         </nav>
 
@@ -372,6 +376,139 @@
                     <!-- Appointments rendered via JS -->
                 </div>
             </section>
+
+            <!-- ========================================================= -->
+            <!-- TAB 4: RAZORPAY (Live Gateway Control Hub) -->
+            <!-- ========================================================= -->
+            <section id="tab-razorpay" class="admin-tab-section">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Razorpay Control Hub</h2>
+                        <p class="section-subtitle">Live gateway telemetry, payment captures, settlements, refunds & custom client payment links.</p>
+                    </div>
+                    <div class="rzp-header-actions" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button id="openCreatePaymentLinkBtn" class="btn-primary-action">
+                            <span class="btn-icon">+</span>
+                            <span>Create Payment Link</span>
+                        </button>
+                        <button id="refreshRazorpayHubBtn" class="btn-secondary-action btn-sm">
+                            <span id="refreshRazorpayIcon">↻</span>
+                            <span>Refresh Hub</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPI Summary Strip -->
+                <div class="razorpay-kpi-grid">
+                    <div class="razorpay-kpi-card">
+                        <span class="rzp-kpi-label">Captured Volume</span>
+                        <div class="rzp-kpi-value" id="kpiCapturedVolume">₹0</div>
+                        <span class="rzp-kpi-hint">Processed across recent payments</span>
+                    </div>
+                    <div class="razorpay-kpi-card">
+                        <span class="rzp-kpi-label">Total Settled</span>
+                        <div class="rzp-kpi-value" id="kpiTotalSettled">₹0</div>
+                        <span class="rzp-kpi-hint">Net credited to Artpoure bank</span>
+                    </div>
+                    <div class="razorpay-kpi-card">
+                        <span class="rzp-kpi-label">Total Refunded</span>
+                        <div class="rzp-kpi-value" id="kpiTotalRefunded">₹0</div>
+                        <span class="rzp-kpi-hint">Disbursed back to clients</span>
+                    </div>
+                    <div class="razorpay-kpi-card">
+                        <span class="rzp-kpi-label">Gateway Fees & Tax</span>
+                        <div class="rzp-kpi-value" id="kpiGatewayFees">₹0</div>
+                        <span class="rzp-kpi-hint">Razorpay fee + 18% GST (Est.)</span>
+                    </div>
+                </div>
+
+                <!-- Razorpay Sub-Tabs Bar -->
+                <div class="razorpay-subtabs-bar">
+                    <button class="rzp-subtab-btn active" data-subtab="payments">
+                        <span>Payments</span>
+                        <span class="rzp-badge" id="rzpPaymentsCountBadge">0</span>
+                    </button>
+                    <button class="rzp-subtab-btn" data-subtab="settlements">
+                        <span>Settlements</span>
+                        <span class="rzp-badge" id="rzpSettlementsCountBadge">0</span>
+                    </button>
+                    <button class="rzp-subtab-btn" data-subtab="refunds">
+                        <span>Refunds</span>
+                        <span class="rzp-badge" id="rzpRefundsCountBadge">0</span>
+                    </button>
+                    <button class="rzp-subtab-btn" data-subtab="links">
+                        <span>Payment Links</span>
+                        <span class="rzp-badge" id="rzpLinksCountBadge">0</span>
+                    </button>
+                </div>
+
+                <!-- Loading State Container -->
+                <div id="razorpayLoadingSpinner" class="loading-state-container" style="display: none;">
+                    <div class="luxury-spinner"></div>
+                    <p class="loading-text" id="razorpayLoadingText">Fetching Razorpay Telemetry...</p>
+                </div>
+
+                <!-- SUBTAB 1: PAYMENTS -->
+                <div id="rzpSubtab-payments" class="rzp-subtab-content active">
+                    <div class="orders-controls-bar">
+                        <div class="search-input-wrap">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="rzpPaymentSearchInput" class="search-input" placeholder="Search by payment ID, order ID, email, phone, VPA...">
+                        </div>
+                        <div class="filter-pills-scroll" id="rzpPaymentFilters">
+                            <button class="filter-pill active" data-status="ALL">All</button>
+                            <button class="filter-pill" data-status="CAPTURED">Captured</button>
+                            <button class="filter-pill" data-status="AUTHORIZED">Authorized</button>
+                            <button class="filter-pill" data-status="FAILED">Failed</button>
+                            <button class="filter-pill" data-status="REFUNDED">Refunded</button>
+                        </div>
+                    </div>
+                    <div id="rzpPaymentsEmptyState" class="empty-state-card" style="display: none;">
+                        <span class="empty-icon">⚡</span>
+                        <h3>No Payments Found</h3>
+                        <p>No transactions match your search or filter criteria.</p>
+                    </div>
+                    <div id="rzpPaymentsList" class="rzp-items-list">
+                        <!-- Payments rendered via JS -->
+                    </div>
+                </div>
+
+                <!-- SUBTAB 2: SETTLEMENTS -->
+                <div id="rzpSubtab-settlements" class="rzp-subtab-content" style="display: none;">
+                    <div id="rzpSettlementsEmptyState" class="empty-state-card" style="display: none;">
+                        <span class="empty-icon">🏦</span>
+                        <h3>No Settlements Found</h3>
+                        <p>No bank payouts recorded on this Razorpay account yet.</p>
+                    </div>
+                    <div id="rzpSettlementsList" class="rzp-items-list">
+                        <!-- Settlements rendered via JS -->
+                    </div>
+                </div>
+
+                <!-- SUBTAB 3: REFUNDS -->
+                <div id="rzpSubtab-refunds" class="rzp-subtab-content" style="display: none;">
+                    <div id="rzpRefundsEmptyState" class="empty-state-card" style="display: none;">
+                        <span class="empty-icon">💸</span>
+                        <h3>No Refunds Found</h3>
+                        <p>No refund transactions recorded yet.</p>
+                    </div>
+                    <div id="rzpRefundsList" class="rzp-items-list">
+                        <!-- Refunds rendered via JS -->
+                    </div>
+                </div>
+
+                <!-- SUBTAB 4: PAYMENT LINKS -->
+                <div id="rzpSubtab-links" class="rzp-subtab-content" style="display: none;">
+                    <div id="rzpLinksEmptyState" class="empty-state-card" style="display: none;">
+                        <span class="empty-icon">🔗</span>
+                        <h3>No Payment Links Found</h3>
+                        <p>Create bespoke commission links for custom bridal silhouettes or private sales.</p>
+                    </div>
+                    <div id="rzpLinksList" class="rzp-items-list">
+                        <!-- Payment links rendered via JS -->
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -453,7 +590,67 @@
         </div>
     </div>
 
+    <!-- CREATE PAYMENT LINK MODAL -->
+    <div id="createPaymentLinkModal" class="confirm-modal-overlay" style="display: none;">
+        <div class="confirm-modal-card" style="max-width: 520px;">
+            <div class="form-card-header" style="margin-bottom: 16px; padding-bottom: 12px;">
+                <h3 class="confirm-modal-title" style="margin: 0; color: var(--gold);">⚡ Create Razorpay Payment Link</h3>
+                <button id="closeCreatePaymentLinkModalBtn" class="btn-close-form" title="Close">✕</button>
+            </div>
+            <form id="createPaymentLinkForm" class="admin-form" autocomplete="off">
+                <div class="form-field-group" style="margin-bottom: 14px;">
+                    <label for="linkCustomerName" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Client Name *</label>
+                    <input type="text" id="linkCustomerName" class="form-input" placeholder="e.g. Radhika Sharma" required>
+                </div>
+                <div class="form-grid-row" style="margin-bottom: 14px;">
+                    <div class="form-field-group">
+                        <label for="linkCustomerPhone" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">WhatsApp / Mobile *</label>
+                        <input type="tel" id="linkCustomerPhone" class="form-input" placeholder="10-digit mobile" maxlength="10" required>
+                    </div>
+                    <div class="form-field-group">
+                        <label for="linkCustomerEmail" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Email (Optional)</label>
+                        <input type="email" id="linkCustomerEmail" class="form-input" placeholder="client@example.com">
+                    </div>
+                </div>
+                <div class="form-field-group" style="margin-bottom: 14px;">
+                    <label for="linkAmountInr" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Amount (₹) *</label>
+                    <div style="position: relative;">
+                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--gold); font-weight: 700; font-size: 16px;">₹</span>
+                        <input type="number" id="linkAmountInr" class="form-input" min="1" step="1" placeholder="e.g. 15000" style="padding-left: 28px; font-size: 15px; font-weight: 700; color: var(--gold);" required>
+                    </div>
+                </div>
+                <div class="form-field-group" style="margin-bottom: 14px;">
+                    <label for="linkDescription" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Purpose / Description *</label>
+                    <input type="text" id="linkDescription" class="form-input" placeholder="e.g. Custom Kanjeevaram Bridal Silk Saree - Advance" required>
+                </div>
+                <div style="margin-bottom: 18px; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="linkAcceptPartial" style="accent-color: var(--gold); width: 16px; height: 16px; cursor: pointer;">
+                    <label for="linkAcceptPartial" style="font-size: 13px; cursor: pointer; color: var(--text-primary); font-weight: 500;">Allow client to make partial payments</label>
+                </div>
+
+                <!-- Generated Link Success Output Card -->
+                <div id="linkSuccessCard" style="display: none; background: rgba(197, 160, 89, 0.1); border: 1px solid var(--gold); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--gold); margin-bottom: 6px;">✓ Payment Link Generated!</div>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
+                        <input type="text" id="generatedLinkInput" readonly style="background: var(--bg-deep); border: 1px solid var(--gold-border); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 12px; flex: 1; font-family: monospace;">
+                        <button type="button" id="copyGeneratedLinkBtn" class="btn-secondary-action btn-sm">Copy</button>
+                    </div>
+                    <a id="shareWhatsappBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary-action btn-sm" style="display: inline-flex; text-decoration: none; background: #25D366; color: #fff; border: none;">
+                        <span>💬 Share on WhatsApp</span>
+                    </a>
+                </div>
+
+                <div class="confirm-modal-actions">
+                    <button type="button" id="cancelCreatePaymentLinkBtn" class="btn-secondary-action">Cancel</button>
+                    <button type="submit" id="submitCreatePaymentLinkBtn" class="btn-primary-action">
+                        <span id="submitCreatePaymentLinkText">Generate Payment Link</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modular Admin Script -->
-    <script type="module" src="admin.js?v=20261122_custom_refunds"></script>
+    <script type="module" src="admin.js?v=20261122_razorpay_hub"></script>
 </body>
 </html>

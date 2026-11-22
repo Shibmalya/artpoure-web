@@ -55,7 +55,17 @@ const state = {
     consultationSearchQuery: '',
     variantCounter: 0,
     modalPendingAction: null,
-    currentRefundOrder: null
+    currentRefundOrder: null,
+    razorpaySubtab: 'payments',
+    razorpaySearchQuery: '',
+    razorpayPaymentFilter: 'ALL',
+    razorpayData: {
+        payments: [],
+        settlements: [],
+        refunds: [],
+        links: []
+    },
+    razorpayLoaded: false
 };
 
 // DOM Elements
@@ -138,7 +148,52 @@ const el = {
     refundPartialRestockHint: document.getElementById('refundPartialRestockHint'),
     refundModalCancelBtn: document.getElementById('refundModalCancelBtn'),
     refundModalConfirmBtn: document.getElementById('refundModalConfirmBtn'),
-    refundModalConfirmText: document.getElementById('refundModalConfirmText')
+    refundModalConfirmText: document.getElementById('refundModalConfirmText'),
+
+    // Razorpay Hub
+    refreshRazorpayHubBtn: document.getElementById('refreshRazorpayHubBtn'),
+    refreshRazorpayIcon: document.getElementById('refreshRazorpayIcon'),
+    openCreatePaymentLinkBtn: document.getElementById('openCreatePaymentLinkBtn'),
+    kpiCapturedVolume: document.getElementById('kpiCapturedVolume'),
+    kpiTotalSettled: document.getElementById('kpiTotalSettled'),
+    kpiTotalRefunded: document.getElementById('kpiTotalRefunded'),
+    kpiGatewayFees: document.getElementById('kpiGatewayFees'),
+    rzpSubtabBtns: document.querySelectorAll('.rzp-subtab-btn'),
+    rzpSubtabContents: document.querySelectorAll('.rzp-subtab-content'),
+    razorpayLoadingSpinner: document.getElementById('razorpayLoadingSpinner'),
+    razorpayLoadingText: document.getElementById('razorpayLoadingText'),
+    rzpPaymentsCountBadge: document.getElementById('rzpPaymentsCountBadge'),
+    rzpSettlementsCountBadge: document.getElementById('rzpSettlementsCountBadge'),
+    rzpRefundsCountBadge: document.getElementById('rzpRefundsCountBadge'),
+    rzpLinksCountBadge: document.getElementById('rzpLinksCountBadge'),
+    rzpPaymentSearchInput: document.getElementById('rzpPaymentSearchInput'),
+    rzpPaymentFilters: document.getElementById('rzpPaymentFilters'),
+    rzpPaymentsEmptyState: document.getElementById('rzpPaymentsEmptyState'),
+    rzpPaymentsList: document.getElementById('rzpPaymentsList'),
+    rzpSettlementsEmptyState: document.getElementById('rzpSettlementsEmptyState'),
+    rzpSettlementsList: document.getElementById('rzpSettlementsList'),
+    rzpRefundsEmptyState: document.getElementById('rzpRefundsEmptyState'),
+    rzpRefundsList: document.getElementById('rzpRefundsList'),
+    rzpLinksEmptyState: document.getElementById('rzpLinksEmptyState'),
+    rzpLinksList: document.getElementById('rzpLinksList'),
+
+    // Create Payment Link Modal
+    createPaymentLinkModal: document.getElementById('createPaymentLinkModal'),
+    closeCreatePaymentLinkModalBtn: document.getElementById('closeCreatePaymentLinkModalBtn'),
+    createPaymentLinkForm: document.getElementById('createPaymentLinkForm'),
+    cancelCreatePaymentLinkBtn: document.getElementById('cancelCreatePaymentLinkBtn'),
+    submitCreatePaymentLinkBtn: document.getElementById('submitCreatePaymentLinkBtn'),
+    submitCreatePaymentLinkText: document.getElementById('submitCreatePaymentLinkText'),
+    linkCustomerName: document.getElementById('linkCustomerName'),
+    linkCustomerPhone: document.getElementById('linkCustomerPhone'),
+    linkCustomerEmail: document.getElementById('linkCustomerEmail'),
+    linkAmountInr: document.getElementById('linkAmountInr'),
+    linkDescription: document.getElementById('linkDescription'),
+    linkAcceptPartial: document.getElementById('linkAcceptPartial'),
+    linkSuccessCard: document.getElementById('linkSuccessCard'),
+    generatedLinkInput: document.getElementById('generatedLinkInput'),
+    copyGeneratedLinkBtn: document.getElementById('copyGeneratedLinkBtn'),
+    shareWhatsappBtn: document.getElementById('shareWhatsappBtn')
 };
 
 // =============================================================================
@@ -269,6 +324,9 @@ function switchTab(tabName) {
     el.tabSections.forEach(sec => {
         sec.classList.toggle('active', sec.id === `tab-${tabName}`);
     });
+    if (tabName === 'razorpay' && !state.razorpayLoaded) {
+        fetchRazorpayHubData();
+    }
 }
 
 // =============================================================================
@@ -1220,6 +1278,12 @@ function renderOrdersList() {
                         <span>Save Update</span>
                     </button>
 
+                    ${(ord.razorpayOrderId && (payStatus === 'PENDING' || payStatus === 'PENDING_ADVANCE')) ? `
+                        <button type="button" class="btn-secondary-action btn-sm sync-razorpay-btn" data-id="${ord.id}" title="Reconcile live payment status with Razorpay" style="padding: 4px 10px; font-size: 11px;">
+                            <span>↻ Sync Razorpay</span>
+                        </button>
+                    ` : ''}
+
                     ${canRefund ? `
                         <button type="button" class="btn-danger-action btn-sm issue-refund-btn" data-id="${ord.id}" style="background: rgba(229, 57, 53, 0.2); border: 1px solid #E53935; color: #FFCDD2;">
                             <span>💸 Issue Refund ${stats.isPartiallyRefunded ? `(₹${stats.remainingRefundableInr.toLocaleString('en-IN')} Left)` : ''}</span>
@@ -1245,6 +1309,35 @@ function renderOrdersList() {
     // Attach fulfillment save listeners
     el.ordersList.querySelectorAll('.save-fulfillment-btn').forEach(btn => {
         btn.addEventListener('click', () => saveOrderFulfillment(btn.dataset.id));
+    });
+
+    // Attach sync razorpay listeners
+    el.ordersList.querySelectorAll('.sync-razorpay-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const orderDocId = btn.dataset.id;
+            btn.disabled = true;
+            btn.innerHTML = '<span>Syncing...</span>';
+            try {
+                const razorpayAdminCallable = httpsCallable(functions, 'razorpayAdmin');
+                const result = await razorpayAdminCallable({
+                    action: 'reconcileOrder',
+                    payload: { orderId: orderDocId }
+                });
+                const resData = result.data || {};
+                if (resData.reconciled) {
+                    showToast(`Order reconciled! Status: ${resData.paymentStatus} (${resData.razorpayPaymentId || ''})`, 'success');
+                } else {
+                    showToast(resData.message || 'No captured payment found yet on Razorpay.', 'info');
+                }
+                await fetchOrders();
+            } catch (err) {
+                console.error('Order reconcile error:', err);
+                showToast(`Sync failed: ${err.message || err}`, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<span>↻ Sync Razorpay</span>';
+            }
+        });
     });
 
     // Attach refund trigger listeners
@@ -1635,3 +1728,692 @@ el.consultationStatusFilters.querySelectorAll('.filter-pill').forEach(pill => {
         renderConsultationsList();
     });
 });
+
+// =============================================================================
+// TAB 4: RAZORPAY CONTROL HUB
+// =============================================================================
+
+function switchRazorpaySubtab(subtabName) {
+    state.razorpaySubtab = subtabName;
+    if (el.rzpSubtabBtns) {
+        el.rzpSubtabBtns.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.subtab === subtabName);
+        });
+    }
+    if (el.rzpSubtabContents) {
+        el.rzpSubtabContents.forEach(sec => {
+            const isMatch = sec.id === `rzpSubtab-${subtabName}`;
+            sec.classList.toggle('active', isMatch);
+            sec.style.display = isMatch ? 'block' : 'none';
+        });
+    }
+    renderActiveRazorpaySubtab();
+}
+
+async function fetchRazorpayHubData() {
+    if (!state.user) return;
+    if (el.razorpayLoadingSpinner) el.razorpayLoadingSpinner.style.display = 'flex';
+    if (el.refreshRazorpayIcon) el.refreshRazorpayIcon.classList.add('spin');
+
+    try {
+        const razorpayAdminCallable = httpsCallable(functions, 'razorpayAdmin');
+
+        const [paymentsRes, settlementsRes, refundsRes, linksRes] = await Promise.allSettled([
+            razorpayAdminCallable({ action: 'listPayments', payload: { count: 50 } }),
+            razorpayAdminCallable({ action: 'listSettlements', payload: { count: 30 } }),
+            razorpayAdminCallable({ action: 'listRefunds', payload: { count: 50 } }),
+            razorpayAdminCallable({ action: 'listPaymentLinks', payload: { count: 30 } })
+        ]);
+
+        if (paymentsRes.status === 'fulfilled') {
+            const data = paymentsRes.value.data || {};
+            state.razorpayData.payments = Array.isArray(data.items) ? data.items : [];
+        } else {
+            console.warn("Could not list payments:", paymentsRes.reason);
+        }
+
+        if (settlementsRes.status === 'fulfilled') {
+            const data = settlementsRes.value.data || {};
+            state.razorpayData.settlements = Array.isArray(data.items) ? data.items : [];
+        } else {
+            console.warn("Could not list settlements:", settlementsRes.reason);
+        }
+
+        if (refundsRes.status === 'fulfilled') {
+            const data = refundsRes.value.data || {};
+            state.razorpayData.refunds = Array.isArray(data.items) ? data.items : [];
+        } else {
+            console.warn("Could not list refunds:", refundsRes.reason);
+        }
+
+        if (linksRes.status === 'fulfilled') {
+            const data = linksRes.value.data || {};
+            state.razorpayData.links = Array.isArray(data.payment_links) ? data.payment_links : [];
+        } else {
+            console.warn("Could not list payment links:", linksRes.reason);
+        }
+
+        state.razorpayLoaded = true;
+        updateRazorpayKPIs();
+        renderActiveRazorpaySubtab();
+        showToast('Razorpay hub refreshed', 'info');
+    } catch (err) {
+        console.error("Error fetching Razorpay hub telemetry:", err);
+        showToast(`Razorpay error: ${err.message || err}`, "error");
+    } finally {
+        if (el.razorpayLoadingSpinner) el.razorpayLoadingSpinner.style.display = 'none';
+        if (el.refreshRazorpayIcon) el.refreshRazorpayIcon.classList.remove('spin');
+    }
+}
+
+function updateRazorpayKPIs() {
+    const payments = state.razorpayData.payments || [];
+    const settlements = state.razorpayData.settlements || [];
+    const refunds = state.razorpayData.refunds || [];
+    const links = state.razorpayData.links || [];
+
+    // KPI 1: Captured Volume
+    const capturedVolume = payments
+        .filter(p => (p.status || '').toLowerCase() === 'captured')
+        .reduce((sum, p) => sum + (Number(p.amountInr) || 0), 0);
+
+    // KPI 2: Total Settled
+    const totalSettled = settlements
+        .reduce((sum, s) => sum + (Number(s.amountInr) || 0), 0);
+
+    // KPI 3: Total Refunded
+    const totalRefunded = refunds
+        .filter(r => (r.status || '').toLowerCase() === 'processed')
+        .reduce((sum, r) => sum + (Number(r.amountInr) || 0), 0);
+
+    // KPI 4: Gateway Fees + GST
+    const gatewayFees = payments
+        .filter(p => (p.status || '').toLowerCase() === 'captured')
+        .reduce((sum, p) => sum + (Number(p.feeInr) || 0) + (Number(p.taxInr) || 0), 0);
+
+    if (el.kpiCapturedVolume) el.kpiCapturedVolume.textContent = `₹${capturedVolume.toLocaleString('en-IN')}`;
+    if (el.kpiTotalSettled) el.kpiTotalSettled.textContent = `₹${totalSettled.toLocaleString('en-IN')}`;
+    if (el.kpiTotalRefunded) el.kpiTotalRefunded.textContent = `₹${totalRefunded.toLocaleString('en-IN')}`;
+    if (el.kpiGatewayFees) el.kpiGatewayFees.textContent = `₹${gatewayFees.toLocaleString('en-IN')}`;
+
+    if (el.rzpPaymentsCountBadge) el.rzpPaymentsCountBadge.textContent = payments.length;
+    if (el.rzpSettlementsCountBadge) el.rzpSettlementsCountBadge.textContent = settlements.length;
+    if (el.rzpRefundsCountBadge) el.rzpRefundsCountBadge.textContent = refunds.length;
+    if (el.rzpLinksCountBadge) el.rzpLinksCountBadge.textContent = links.length;
+}
+
+function renderActiveRazorpaySubtab() {
+    switch (state.razorpaySubtab) {
+        case 'payments':
+            renderRazorpayPayments();
+            break;
+        case 'settlements':
+            renderRazorpaySettlements();
+            break;
+        case 'refunds':
+            renderRazorpayRefunds();
+            break;
+        case 'links':
+            renderRazorpayLinks();
+            break;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUBTAB 1: PAYMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderRazorpayPayments() {
+    const list = el.rzpPaymentsList;
+    if (!list) return;
+
+    const queryStr = (state.razorpaySearchQuery || '').toLowerCase().trim();
+    const filterStatus = (state.razorpayPaymentFilter || 'ALL').toUpperCase();
+
+    const items = state.razorpayData.payments.filter(p => {
+        const status = (p.status || '').toUpperCase();
+        const matchesFilter = (filterStatus === 'ALL') || (status === filterStatus);
+        const matchesSearch = !queryStr ||
+            (p.id && p.id.toLowerCase().includes(queryStr)) ||
+            (p.order_id && p.order_id.toLowerCase().includes(queryStr)) ||
+            (p.email && p.email.toLowerCase().includes(queryStr)) ||
+            (p.contact && p.contact.includes(queryStr)) ||
+            (p.vpa && p.vpa.toLowerCase().includes(queryStr)) ||
+            (p.notes && Object.values(p.notes).some(val => String(val).toLowerCase().includes(queryStr)));
+        return matchesFilter && matchesSearch;
+    });
+
+    if (items.length === 0) {
+        if (el.rzpPaymentsEmptyState) el.rzpPaymentsEmptyState.style.display = 'block';
+        list.innerHTML = '';
+        return;
+    }
+
+    if (el.rzpPaymentsEmptyState) el.rzpPaymentsEmptyState.style.display = 'none';
+
+    list.innerHTML = items.map(p => {
+        const dateStr = p.created_at
+            ? new Date(p.created_at * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'Recent';
+
+        let methodDisplay = (p.method || 'Online').toUpperCase();
+        if (p.method === 'upi') {
+            methodDisplay = `UPI • ${p.vpa || 'App'}`;
+        } else if (p.method === 'card') {
+            const cardNetwork = p.card?.network || 'Card';
+            const cardLast4 = p.card?.last4 ? `•••• ${p.card.last4}` : '';
+            methodDisplay = `${cardNetwork} ${cardLast4}`.trim();
+        } else if (p.method === 'netbanking') {
+            methodDisplay = `Netbanking • ${p.bank || 'Bank'}`;
+        } else if (p.method === 'wallet') {
+            methodDisplay = `Wallet • ${p.wallet || 'Wallet'}`;
+        }
+
+        const statusClass = (p.status || 'pending').toLowerCase();
+        const amountFormatted = Number(p.amountInr || 0).toLocaleString('en-IN');
+        const feesFormatted = Number(p.feeInr || 0) + Number(p.taxInr || 0);
+
+        const isAuthorized = (p.status || '').toLowerCase() === 'authorized';
+        const isCaptured = (p.status || '').toLowerCase() === 'captured';
+
+        return `
+            <div class="rzp-card" data-payment-id="${p.id}">
+                <div class="rzp-card-header">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-family: monospace; font-weight: 700; color: var(--gold); font-size: 14px;">${p.id}</span>
+                        <button type="button" class="rzp-copy-btn copy-id-btn" data-val="${p.id}">Copy ID</button>
+                        <span style="font-size: 12px; color: var(--text-muted);">${dateStr}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span class="status-badge ${statusClass}">${(p.status || '').toUpperCase()}</span>
+                    </div>
+                </div>
+
+                <div class="rzp-card-grid">
+                    <div class="order-info-column">
+                        <span class="order-info-label">Amount</span>
+                        <span style="font-size: 18px; font-weight: 700; color: var(--gold);">₹${amountFormatted}</span>
+                        ${feesFormatted > 0 ? `<span style="font-size: 11px; color: var(--text-muted);">Fee + GST: ₹${feesFormatted.toLocaleString('en-IN')}</span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Payment Method</span>
+                        <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">${methodDisplay}</span>
+                        ${p.rrn ? `<span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">RRN: ${p.rrn}</span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Customer / Contact</span>
+                        <span style="font-size: 13px; color: var(--text-primary);">${p.email || p.contact || 'Guest'}</span>
+                        ${p.contact ? `<span style="font-size: 11px; color: var(--text-muted);"><a href="tel:${p.contact}" style="color: var(--gold); text-decoration: none;">📞 ${p.contact}</a></span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Linked Order ID</span>
+                        <span style="font-size: 12px; font-family: monospace; color: var(--text-primary);">${p.order_id || p.notes?.orderId || 'Direct / Payment Link'}</span>
+                        ${p.error_description ? `<span style="font-size: 11px; color: #EF5350;">Reason: ${p.error_description}</span>` : ''}
+                    </div>
+                </div>
+
+                ${(isAuthorized || isCaptured) ? `
+                    <div class="rzp-card-actions">
+                        ${isAuthorized ? `
+                            <button type="button" class="btn-primary-action btn-sm capture-payment-btn" data-id="${p.id}" data-amount="${p.amountInr}">
+                                <span>⚡ Capture Payment (₹${amountFormatted})</span>
+                            </button>
+                        ` : ''}
+                        ${isCaptured ? `
+                            <button type="button" class="btn-danger-action btn-sm rzp-refund-btn" data-payment-id="${p.id}" data-order-id="${p.order_id || p.notes?.orderId || ''}" style="background: rgba(229, 57, 53, 0.2); border: 1px solid #E53935; color: #FFCDD2;">
+                                <span>💸 Issue Refund</span>
+                            </button>
+                        ` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    // Attach copy listeners
+    list.querySelectorAll('.copy-id-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.dataset.val);
+            showToast('Copied Payment ID to clipboard', 'info');
+        });
+    });
+
+    // Attach capture listeners
+    list.querySelectorAll('.capture-payment-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const pId = btn.dataset.id;
+            const amt = Number(btn.dataset.amount);
+            showConfirmModal(
+                'Capture Authorized Payment',
+                `Are you sure you want to capture payment ${pId} for ₹${amt.toLocaleString('en-IN')}?`,
+                async () => {
+                    try {
+                        const razorpayAdminCallable = httpsCallable(functions, 'razorpayAdmin');
+                        await razorpayAdminCallable({
+                            action: 'capturePayment',
+                            payload: { paymentId: pId, amountInr: amt }
+                        });
+                        showToast(`Payment ${pId} captured successfully!`, 'success');
+                        await fetchRazorpayHubData();
+                    } catch (err) {
+                        console.error('Capture payment error:', err);
+                        showToast(`Capture failed: ${err.message || err}`, 'error');
+                    }
+                }
+            );
+        });
+    });
+
+    // Attach refund listeners
+    list.querySelectorAll('.rzp-refund-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const pId = btn.dataset.paymentId;
+            const oId = btn.dataset.orderId;
+            const matchingOrder = state.orders.find(o =>
+                o.razorpayPaymentId === pId ||
+                o.id === oId ||
+                o.orderId === oId ||
+                o.razorpayOrderId === oId
+            );
+            if (matchingOrder) {
+                openRefundModal(matchingOrder.id);
+            } else {
+                showToast(`No linked Artpoure order found for payment ${pId}. Please locate the order in the Orders tab to issue a refund.`, 'info');
+            }
+        });
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUBTAB 2: SETTLEMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderRazorpaySettlements() {
+    const list = el.rzpSettlementsList;
+    if (!list) return;
+
+    const items = state.razorpayData.settlements || [];
+    if (items.length === 0) {
+        if (el.rzpSettlementsEmptyState) el.rzpSettlementsEmptyState.style.display = 'block';
+        list.innerHTML = '';
+        return;
+    }
+
+    if (el.rzpSettlementsEmptyState) el.rzpSettlementsEmptyState.style.display = 'none';
+
+    list.innerHTML = items.map(s => {
+        const dateStr = s.created_at
+            ? new Date(s.created_at * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'Recent';
+
+        const amountFormatted = Number(s.amountInr || 0).toLocaleString('en-IN');
+        const feesFormatted = Number(s.feesInr || 0).toLocaleString('en-IN');
+        const taxFormatted = Number(s.taxInr || 0).toLocaleString('en-IN');
+        const statusClass = (s.status || 'processed').toLowerCase();
+
+        return `
+            <div class="rzp-card" data-settlement-id="${s.id}">
+                <div class="rzp-card-header">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-family: monospace; font-weight: 700; color: var(--gold); font-size: 14px;">${s.id}</span>
+                        <span style="font-size: 12px; color: var(--text-muted);">${dateStr}</span>
+                    </div>
+                    <span class="status-badge ${statusClass}">${(s.status || 'PROCESSED').toUpperCase()}</span>
+                </div>
+
+                <div class="rzp-card-grid">
+                    <div class="order-info-column">
+                        <span class="order-info-label">Net Settled Amount</span>
+                        <span style="font-size: 18px; font-weight: 700; color: var(--status-green);">₹${amountFormatted}</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">Credited to Artpoure account</span>
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Deductions (Fees & GST)</span>
+                        <span style="font-size: 13px; color: var(--text-primary);">Fees: ₹${feesFormatted}</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">GST: ₹${taxFormatted}</span>
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Bank UTR Number</span>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                            <span style="font-family: monospace; font-size: 13px; font-weight: 600; color: var(--text-primary);">${s.utr || 'Pending Settlement'}</span>
+                            ${s.utr ? `<button type="button" class="rzp-copy-btn copy-utr-btn" data-utr="${s.utr}">Copy UTR</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.copy-utr-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.dataset.utr);
+            showToast('Copied UTR to clipboard', 'info');
+        });
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUBTAB 3: REFUNDS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderRazorpayRefunds() {
+    const list = el.rzpRefundsList;
+    if (!list) return;
+
+    const items = state.razorpayData.refunds || [];
+    if (items.length === 0) {
+        if (el.rzpRefundsEmptyState) el.rzpRefundsEmptyState.style.display = 'block';
+        list.innerHTML = '';
+        return;
+    }
+
+    if (el.rzpRefundsEmptyState) el.rzpRefundsEmptyState.style.display = 'none';
+
+    list.innerHTML = items.map(r => {
+        const dateStr = r.created_at
+            ? new Date(r.created_at * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'Recent';
+
+        const amountFormatted = Number(r.amountInr || 0).toLocaleString('en-IN');
+        const statusClass = (r.status || 'processed').toLowerCase();
+        const reason = r.notes?.reason || (r.notes && Object.values(r.notes).join(', ')) || 'Admin Initiated';
+
+        return `
+            <div class="rzp-card" data-refund-id="${r.id}">
+                <div class="rzp-card-header">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-family: monospace; font-weight: 700; color: #EF5350; font-size: 14px;">${r.id}</span>
+                        <button type="button" class="rzp-copy-btn copy-rfnd-btn" data-val="${r.id}">Copy ID</button>
+                        <span style="font-size: 12px; color: var(--text-muted);">${dateStr}</span>
+                    </div>
+                    <span class="status-badge ${statusClass}">${(r.status || 'PROCESSED').toUpperCase()}</span>
+                </div>
+
+                <div class="rzp-card-grid">
+                    <div class="order-info-column">
+                        <span class="order-info-label">Refund Amount</span>
+                        <span style="font-size: 18px; font-weight: 700; color: #EF5350;">₹${amountFormatted}</span>
+                        ${r.speed_processed ? `<span style="font-size: 11px; color: var(--text-muted);">Speed: ${r.speed_processed}</span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Associated Payment</span>
+                        <span style="font-size: 13px; font-family: monospace; color: var(--gold);">${r.payment_id}</span>
+                        ${r.rrn ? `<span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">Bank ARN/RRN: ${r.rrn}</span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Reason / Notes</span>
+                        <span style="font-size: 13px; color: var(--text-primary);">${reason}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.copy-rfnd-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.dataset.val);
+            showToast('Copied Refund ID to clipboard', 'info');
+        });
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUBTAB 4: PAYMENT LINKS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderRazorpayLinks() {
+    const list = el.rzpLinksList;
+    if (!list) return;
+
+    const items = state.razorpayData.links || [];
+    if (items.length === 0) {
+        if (el.rzpLinksEmptyState) el.rzpLinksEmptyState.style.display = 'block';
+        list.innerHTML = '';
+        return;
+    }
+
+    if (el.rzpLinksEmptyState) el.rzpLinksEmptyState.style.display = 'none';
+
+    list.innerHTML = items.map(l => {
+        const dateStr = l.created_at
+            ? new Date(l.created_at * 1000).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+            : 'Recent';
+
+        const amountFormatted = Number(l.amountInr || 0).toLocaleString('en-IN');
+        const paidFormatted = Number(l.amountPaidInr || 0).toLocaleString('en-IN');
+        const status = (l.status || 'created').toLowerCase();
+        const statusClass = status === 'paid' ? 'paid' : (status === 'cancelled' || status === 'expired' ? 'cancelled' : 'pending');
+
+        const cust = l.customer || {};
+        let rawPhone = (cust.contact || '').replace(/[^0-9]/g, '');
+        if (rawPhone.length === 12 && rawPhone.startsWith('91')) {
+            rawPhone = rawPhone.slice(2);
+        }
+
+        const canCancel = (status === 'created' || status === 'partially_paid');
+        const whatsappMsg = encodeURIComponent(`Namaste ${cust.name || 'Client'}, here is your bespoke payment link from Artpoure: ${l.short_url} for ₹${amountFormatted}.`);
+
+        return `
+            <div class="rzp-card" data-link-id="${l.id}">
+                <div class="rzp-card-header">
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-family: monospace; font-weight: 700; color: var(--gold); font-size: 14px;">${l.id}</span>
+                        <span style="font-size: 12px; color: var(--text-muted);">${dateStr}</span>
+                    </div>
+                    <span class="status-badge ${statusClass}">${(l.status || '').toUpperCase()}</span>
+                </div>
+
+                <div class="rzp-card-grid">
+                    <div class="order-info-column">
+                        <span class="order-info-label">Amount / Paid</span>
+                        <span style="font-size: 18px; font-weight: 700; color: var(--gold);">₹${amountFormatted}</span>
+                        <span style="font-size: 11px; color: var(--text-muted);">Paid: ₹${paidFormatted}</span>
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Customer</span>
+                        <span style="font-size: 13px; font-weight: 600; color: var(--text-primary);">${cust.name || 'Guest Client'}</span>
+                        ${cust.contact ? `<span style="font-size: 11px; color: var(--text-muted);"><a href="tel:${cust.contact}" style="color: var(--gold); text-decoration: none;">📞 ${cust.contact}</a></span>` : ''}
+                    </div>
+
+                    <div class="order-info-column">
+                        <span class="order-info-label">Purpose / Description</span>
+                        <span style="font-size: 13px; color: var(--text-primary);">${l.description || 'Bespoke Order'}</span>
+                        ${l.expire_by ? `<span style="font-size: 11px; color: var(--text-muted);">Expires: ${new Date(l.expire_by * 1000).toLocaleDateString('en-IN')}</span>` : ''}
+                    </div>
+                </div>
+
+                <div class="rzp-card-actions">
+                    <input type="text" readonly value="${l.short_url || ''}" style="background: var(--bg-deep); border: 1px solid var(--border-subtle); color: #fff; padding: 6px 10px; border-radius: 4px; font-size: 12px; flex: 1; min-width: 160px; font-family: monospace;">
+                    <button type="button" class="btn-secondary-action btn-sm copy-link-url-btn" data-url="${l.short_url}">
+                        <span>Copy Link</span>
+                    </button>
+                    ${rawPhone ? `
+                        <a href="https://wa.me/91${rawPhone}?text=${whatsappMsg}" target="_blank" rel="noopener noreferrer" class="btn-secondary-action btn-sm" style="color: #25D366; border-color: #25D366; text-decoration: none;">
+                            <span>💬 WhatsApp</span>
+                        </a>
+                    ` : ''}
+                    ${canCancel ? `
+                        <button type="button" class="btn-card-action danger btn-sm cancel-link-btn" data-id="${l.id}">
+                            <span>Cancel Link</span>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('.copy-link-url-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.dataset.url);
+            showToast('Copied payment link to clipboard', 'info');
+        });
+    });
+
+    list.querySelectorAll('.cancel-link-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const linkId = btn.dataset.id;
+            showConfirmModal(
+                'Cancel Payment Link',
+                `Are you sure you want to deactivate payment link ${linkId}? The client will no longer be able to complete payment through it.`,
+                async () => {
+                    try {
+                        const razorpayAdminCallable = httpsCallable(functions, 'razorpayAdmin');
+                        await razorpayAdminCallable({
+                            action: 'cancelPaymentLink',
+                            payload: { paymentLinkId: linkId }
+                        });
+                        showToast(`Payment link ${linkId} cancelled`, 'success');
+                        await fetchRazorpayHubData();
+                    } catch (err) {
+                        console.error('Cancel link error:', err);
+                        showToast(`Failed to cancel link: ${err.message || err}`, 'error');
+                    }
+                }
+            );
+        });
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATE BESPOKE PAYMENT LINK MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function openCreatePaymentLinkModal() {
+    if (el.createPaymentLinkForm) el.createPaymentLinkForm.reset();
+    if (el.linkSuccessCard) el.linkSuccessCard.style.display = 'none';
+    if (el.submitCreatePaymentLinkBtn) {
+        el.submitCreatePaymentLinkBtn.disabled = false;
+        el.submitCreatePaymentLinkText.textContent = 'Generate Payment Link';
+    }
+    if (el.createPaymentLinkModal) el.createPaymentLinkModal.style.display = 'flex';
+}
+
+function closeCreatePaymentLinkModal() {
+    if (el.createPaymentLinkModal) el.createPaymentLinkModal.style.display = 'none';
+}
+
+async function handleCreatePaymentLinkSubmit(e) {
+    e.preventDefault();
+
+    const name = el.linkCustomerName ? el.linkCustomerName.value.trim() : '';
+    const phone = el.linkCustomerPhone ? el.linkCustomerPhone.value.trim() : '';
+    const email = el.linkCustomerEmail ? el.linkCustomerEmail.value.trim() : '';
+    const amount = Number(el.linkAmountInr ? el.linkAmountInr.value : 0);
+    const description = el.linkDescription ? el.linkDescription.value.trim() : '';
+    const acceptPartial = Boolean(el.linkAcceptPartial ? el.linkAcceptPartial.checked : false);
+
+    if (!name) {
+        showToast('Please enter customer name.', 'error');
+        return;
+    }
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length !== 10) {
+        showToast('Please enter a valid 10-digit mobile number.', 'error');
+        return;
+    }
+    if (!amount || amount < 1) {
+        showToast('Amount must be at least ₹1.', 'error');
+        return;
+    }
+    if (!description) {
+        showToast('Please enter purpose / description.', 'error');
+        return;
+    }
+
+    el.submitCreatePaymentLinkBtn.disabled = true;
+    el.submitCreatePaymentLinkText.textContent = 'Generating Link...';
+
+    try {
+        const razorpayAdminCallable = httpsCallable(functions, 'razorpayAdmin');
+        const result = await razorpayAdminCallable({
+            action: 'createPaymentLink',
+            payload: {
+                customerName: name,
+                customerPhone: cleanPhone,
+                customerEmail: email || null,
+                amountInr: Math.round(amount),
+                description: description,
+                acceptPartial: acceptPartial
+            }
+        });
+
+        const data = result.data || {};
+        const shortUrl = data.short_url;
+
+        if (el.generatedLinkInput) el.generatedLinkInput.value = shortUrl || '';
+        if (el.shareWhatsappBtn) {
+            const waMsg = encodeURIComponent(`Namaste ${name}, here is your bespoke payment link from Artpoure: ${shortUrl} for ₹${Math.round(amount).toLocaleString('en-IN')} (${description}).`);
+            el.shareWhatsappBtn.href = `https://wa.me/91${cleanPhone}?text=${waMsg}`;
+        }
+        if (el.linkSuccessCard) el.linkSuccessCard.style.display = 'block';
+
+        showToast('Payment link created successfully!', 'success');
+        el.submitCreatePaymentLinkText.textContent = 'Generated';
+
+        // Refresh hub list in background
+        fetchRazorpayHubData();
+    } catch (err) {
+        console.error('Error creating payment link:', err);
+        showToast(`Failed to create link: ${err.message || err}`, 'error');
+        el.submitCreatePaymentLinkBtn.disabled = false;
+        el.submitCreatePaymentLinkText.textContent = 'Generate Payment Link';
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RAZORPAY EVENT LISTENERS
+// ─────────────────────────────────────────────────────────────────────────────
+if (el.refreshRazorpayHubBtn) {
+    el.refreshRazorpayHubBtn.addEventListener('click', fetchRazorpayHubData);
+}
+
+if (el.rzpSubtabBtns) {
+    el.rzpSubtabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchRazorpaySubtab(btn.dataset.subtab);
+        });
+    });
+}
+
+if (el.rzpPaymentSearchInput) {
+    el.rzpPaymentSearchInput.addEventListener('input', e => {
+        state.razorpaySearchQuery = e.target.value;
+        renderRazorpayPayments();
+    });
+}
+
+if (el.rzpPaymentFilters) {
+    el.rzpPaymentFilters.querySelectorAll('.filter-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            el.rzpPaymentFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            state.razorpayPaymentFilter = pill.dataset.status;
+            renderRazorpayPayments();
+        });
+    });
+}
+
+if (el.openCreatePaymentLinkBtn) {
+    el.openCreatePaymentLinkBtn.addEventListener('click', openCreatePaymentLinkModal);
+}
+if (el.closeCreatePaymentLinkModalBtn) {
+    el.closeCreatePaymentLinkModalBtn.addEventListener('click', closeCreatePaymentLinkModal);
+}
+if (el.cancelCreatePaymentLinkBtn) {
+    el.cancelCreatePaymentLinkBtn.addEventListener('click', closeCreatePaymentLinkModal);
+}
+if (el.createPaymentLinkForm) {
+    el.createPaymentLinkForm.addEventListener('submit', handleCreatePaymentLinkSubmit);
+}
+if (el.copyGeneratedLinkBtn) {
+    el.copyGeneratedLinkBtn.addEventListener('click', () => {
+        if (el.generatedLinkInput && el.generatedLinkInput.value) {
+            navigator.clipboard.writeText(el.generatedLinkInput.value);
+            showToast('Copied link to clipboard', 'info');
+        }
+    });
+}
+
