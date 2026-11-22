@@ -7,6 +7,8 @@ import {
     auth,
     db,
     storage,
+    functions,
+    httpsCallable,
     onAuthStateChanged,
     GoogleAuthProvider,
     signInWithPopup,
@@ -52,7 +54,8 @@ const state = {
     consultationFilterStatus: 'ALL',
     consultationSearchQuery: '',
     variantCounter: 0,
-    modalPendingAction: null
+    modalPendingAction: null,
+    currentRefundOrder: null
 };
 
 // DOM Elements
@@ -115,7 +118,20 @@ const el = {
     confirmModalTitle: document.getElementById('confirmModalTitle'),
     confirmModalMessage: document.getElementById('confirmModalMessage'),
     confirmModalCancelBtn: document.getElementById('confirmModalCancelBtn'),
-    confirmModalProceedBtn: document.getElementById('confirmModalProceedBtn')
+    confirmModalProceedBtn: document.getElementById('confirmModalProceedBtn'),
+
+    // Refund Modal
+    refundModal: document.getElementById('refundModal'),
+    closeRefundModalBtn: document.getElementById('closeRefundModalBtn'),
+    refundModalOrderId: document.getElementById('refundModalOrderId'),
+    refundModalPaymentId: document.getElementById('refundModalPaymentId'),
+    refundModalAmount: document.getElementById('refundModalAmount'),
+    refundReasonInput: document.getElementById('refundReasonInput'),
+    refundRestockCheckbox: document.getElementById('refundRestockCheckbox'),
+    refundConflictHint: document.getElementById('refundConflictHint'),
+    refundModalCancelBtn: document.getElementById('refundModalCancelBtn'),
+    refundModalConfirmBtn: document.getElementById('refundModalConfirmBtn'),
+    refundModalConfirmText: document.getElementById('refundModalConfirmText')
 };
 
 // =============================================================================
@@ -999,6 +1015,7 @@ function renderOrdersList() {
         else if (filterStatus === 'COD') matchesFilter = payMethod === 'COD';
         else if (filterStatus === 'SHIPPED') matchesFilter = status === 'SHIPPED';
         else if (filterStatus === 'DELIVERED') matchesFilter = status === 'DELIVERED';
+        else if (filterStatus === 'REFUNDED') matchesFilter = payStatus === 'REFUNDED';
 
         const matchesSearch = !queryStr ||
             (ord.id && ord.id.toLowerCase().includes(queryStr)) ||
@@ -1050,28 +1067,52 @@ function renderOrdersList() {
             `;
         }).join('');
 
-        const payStatusClass = (payStatus === 'PAID' || payStatus === 'COLLECTED') ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending');
+        const hasConflict = Boolean(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED');
+        const rzpPayId = ord.razorpayPaymentId || '';
+        const canRefund = rzpPayId.startsWith('pay_') && payStatus !== 'REFUNDED' && (
+            payStatus === 'PAID' ||
+            payStatus === 'PARTIAL_PAID' ||
+            hasConflict
+        );
+
+        const payStatusClass = payStatus === 'REFUNDED'
+            ? 'refunded'
+            : ((payStatus === 'PAID' || payStatus === 'COLLECTED') ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending'));
         const fulfillStatusClass = fulfillmentStatus.toLowerCase();
-        const payBadgeText = payMethod === 'COD'
-            ? (payStatus === 'COLLECTED' ? 'COD: COLLECTED' : 'COD: PENDING_COD')
-            : (payStatus === 'PAID' ? 'PREPAID: PAID' : 'PREPAID: PENDING');
+
+        let payBadgeText = '';
+        if (payStatus === 'REFUNDED') {
+            const shortRefundId = ord.razorpayRefundId || 'PROCESSED';
+            payBadgeText = `REFUNDED • ${shortRefundId}`;
+        } else if (payMethod === 'COD') {
+            payBadgeText = (payStatus === 'COLLECTED' ? 'COD: COLLECTED' : 'COD: PENDING_COD');
+        } else if (payStatus === 'PARTIAL_PAID') {
+            payBadgeText = `PARTIAL PAID (₹${ord.advancePaidInr || 299})`;
+        } else {
+            payBadgeText = (payStatus === 'PAID' ? 'PREPAID: PAID' : 'PREPAID: PENDING');
+        }
 
         return `
-            <div class="order-card" data-order-id="${ord.id}">
+            <div class="order-card ${hasConflict ? 'has-conflict' : ''}" data-order-id="${ord.id}">
                 <div class="order-card-header">
                     <div class="order-id-wrap">
                         <span class="order-id-badge">${orderId}</span>
                         <span class="order-date-text">• ${dateStr}</span>
                     </div>
-                    <div style="display: flex; gap: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
                         <span class="status-badge ${payStatusClass}">${payBadgeText}</span>
                         <span class="status-badge ${fulfillStatusClass}">${fulfillmentStatus}</span>
                     </div>
                 </div>
 
-                ${(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED') ? `
-                    <div style="background: rgba(229, 57, 53, 0.15); border: 1px solid #E53935; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: #FFCDD2; font-size: 13px; font-weight: 600;">
-                        ⚠️ <strong>STOCK CONFLICT DETECTED:</strong> ${ord.conflictReason || '1-of-1 piece was claimed in another checkout. Please issue an immediate refund in Razorpay Dashboard.'}
+                ${hasConflict ? `
+                    <div style="background: rgba(229, 57, 53, 0.18); border: 1.5px solid #E53935; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; color: #FFCDD2; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                        <div>⚠️ <strong>STOCK CONFLICT DETECTED:</strong> ${ord.conflictReason || '1-of-1 piece was claimed in another checkout. Please issue an immediate refund.'}</div>
+                        ${canRefund ? `
+                            <button type="button" class="btn-danger-action btn-sm issue-refund-btn" data-id="${ord.id}" style="padding: 5px 14px; font-size: 12px;">
+                                <span>💸 Issue Refund</span>
+                            </button>
+                        ` : ''}
                     </div>
                 ` : ''}
 
@@ -1144,6 +1185,18 @@ function renderOrdersList() {
                     <button class="btn-primary-action btn-sm save-fulfillment-btn" data-id="${ord.id}">
                         <span>Save Update</span>
                     </button>
+
+                    ${canRefund ? `
+                        <button type="button" class="btn-danger-action btn-sm issue-refund-btn" data-id="${ord.id}" style="background: rgba(229, 57, 53, 0.2); border: 1px solid #E53935; color: #FFCDD2;">
+                            <span>💸 Issue Refund</span>
+                        </button>
+                    ` : ''}
+
+                    ${payStatus === 'REFUNDED' ? `
+                        <span style="font-size: 11px; color: #EF5350; font-weight: 600; padding: 4px 8px; background: rgba(239, 83, 80, 0.1); border-radius: 4px;">
+                            ✓ Refunded ${ord.refundAmountInr ? `(₹${Number(ord.refundAmountInr).toLocaleString('en-IN')})` : ''} via Razorpay
+                        </span>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -1152,6 +1205,14 @@ function renderOrdersList() {
     // Attach fulfillment save listeners
     el.ordersList.querySelectorAll('.save-fulfillment-btn').forEach(btn => {
         btn.addEventListener('click', () => saveOrderFulfillment(btn.dataset.id));
+    });
+
+    // Attach refund trigger listeners
+    el.ordersList.querySelectorAll('.issue-refund-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openRefundModal(btn.dataset.id);
+        });
     });
 }
 
@@ -1198,6 +1259,93 @@ async function saveOrderFulfillment(docId) {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save Update';
     }
+}
+
+// =============================================================================
+// RAZORPAY 1-CLICK REFUND ENGINE (Admin-Only Callable)
+// =============================================================================
+
+function openRefundModal(orderId) {
+    const ord = state.orders.find(o => o.id === orderId || o.orderId === orderId);
+    if (!ord) return;
+
+    state.currentRefundOrder = ord;
+    const isPartialCod = ord.paymentMethod === 'PARTIAL_COD' || ord.paymentMode === 'PARTIAL_COD';
+    const fulfillmentStatus = (ord.status || 'CONFIRMED').toUpperCase();
+    const hasConflict = Boolean(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED');
+
+    el.refundModalOrderId.textContent = ord.orderId || ord.id;
+    el.refundModalPaymentId.textContent = ord.razorpayPaymentId || 'N/A';
+
+    if (isPartialCod) {
+        const adv = ord.advancePaidInr || 299;
+        el.refundModalAmount.textContent = `₹${Number(adv).toLocaleString('en-IN')} (Partial-COD Advance Token)`;
+    } else {
+        const grandTotal = (ord.pricing && ord.pricing.grandTotalInr) || ord.grandTotalInr || 0;
+        el.refundModalAmount.textContent = `₹${Number(grandTotal).toLocaleString('en-IN')} (Full Captured Payment)`;
+    }
+
+    el.refundReasonInput.value = hasConflict ? 'Stock conflict / item unavailable' : 'Customer request / Order cancelled';
+
+    if (hasConflict) {
+        el.refundRestockCheckbox.checked = false;
+        if (el.refundConflictHint) el.refundConflictHint.style.display = 'block';
+    } else {
+        el.refundRestockCheckbox.checked = true;
+        if (el.refundConflictHint) el.refundConflictHint.style.display = 'none';
+    }
+
+    el.refundModalConfirmBtn.disabled = false;
+    el.refundModalConfirmText.textContent = 'Confirm & Process Refund';
+    el.refundModal.style.display = 'flex';
+}
+
+function closeRefundModal() {
+    if (el.refundModal) el.refundModal.style.display = 'none';
+    state.currentRefundOrder = null;
+}
+
+async function executeRefund() {
+    if (!state.currentRefundOrder) return;
+    const ord = state.currentRefundOrder;
+    const reasonVal = el.refundReasonInput.value.trim() || 'Admin initiated refund';
+    const shouldRestock = el.refundRestockCheckbox.checked;
+
+    el.refundModalConfirmBtn.disabled = true;
+    el.refundModalConfirmText.textContent = 'Processing Refund via Razorpay...';
+
+    try {
+        const issueOrderRefundCallable = httpsCallable(functions, 'issueOrderRefund');
+        const result = await issueOrderRefundCallable({
+            orderId: ord.id,
+            reason: reasonVal,
+            restockInventory: shouldRestock
+        });
+
+        const data = result.data || {};
+        const refundId = data.refundId || 'Processed';
+        const refundAmt = data.refundAmountInr ? ` (₹${Number(data.refundAmountInr).toLocaleString('en-IN')})` : '';
+        const restockMsg = data.restocked ? ' • Inventory Restocked' : '';
+
+        showToast(`Refund processed successfully! ID: ${refundId}${refundAmt}${restockMsg}`, 'success');
+        closeRefundModal();
+        await fetchOrders();
+    } catch (err) {
+        console.error('Error issuing refund:', err);
+        showToast(`Refund failed: ${err.message || err}`, 'error');
+        el.refundModalConfirmBtn.disabled = false;
+        el.refundModalConfirmText.textContent = 'Confirm & Process Refund';
+    }
+}
+
+if (el.closeRefundModalBtn) {
+    el.closeRefundModalBtn.addEventListener('click', closeRefundModal);
+}
+if (el.refundModalCancelBtn) {
+    el.refundModalCancelBtn.addEventListener('click', closeRefundModal);
+}
+if (el.refundModalConfirmBtn) {
+    el.refundModalConfirmBtn.addEventListener('click', executeRefund);
 }
 
 el.refreshOrdersBtn.addEventListener('click', fetchOrders);

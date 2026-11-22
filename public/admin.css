@@ -1184,6 +1184,18 @@ body {
     border: 1px solid var(--status-red);
 }
 
+.status-badge.refunded {
+    background: rgba(229, 57, 53, 0.18);
+    color: #EF5350;
+    border: 1px solid rgba(239, 83, 80, 0.4);
+    font-weight: 600;
+}
+
+.order-card.has-conflict {
+    border-color: #E53935 !important;
+    box-shadow: 0 0 16px rgba(229, 57, 53, 0.25);
+}
+
 .order-card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

@@ -18,6 +18,16 @@ const razorpayWebhookSecret = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 
 const RAZORPAY_KEY_ID = "rzp_live_U24HQteyWphATZ";
 
+// Authorized Admin Emails (must match firestore.rules and storage.rules)
+const ADMIN_EMAILS = [
+    "artpoure@gmail.com",
+    "artpoure.official@gmail.com",
+    "admin@artpoure.in",
+    "shibmalyaananya@gmail.com",
+    "shibmalyada@gmail.com",
+    "deyananya98@gmail.com"
+];
+
 // Server-side authoritative catalog pricing (guarantees pricing integrity even if catalog collection is being indexed)
 const SERVER_CATALOG_PRICING = {
     "saree-01": { priceInr: 18499, title: "Banarasi Handwoven Katan Silk Saree" },
@@ -1357,6 +1367,39 @@ exports.razorpayWebhook = onRequest(
             }
         }
 
+        // Handle refund.processed: sync refund status initiated from Razorpay Dashboard
+        if (event === "refund.processed") {
+            const refundEntity = (payload.refund && payload.refund.entity) || {};
+            const rzpPaymentId = refundEntity.payment_id;
+            const rzpRefundId = refundEntity.id;
+            const refundAmountInr = Math.round((refundEntity.amount || 0) / 100);
+
+            if (rzpPaymentId) {
+                try {
+                    const querySnap = await db.collection("orders")
+                        .where("razorpayPaymentId", "==", rzpPaymentId)
+                        .limit(1)
+                        .get();
+                    if (!querySnap.empty) {
+                        const orderDoc = querySnap.docs[0];
+                        const d = orderDoc.data() || {};
+                        if (d.paymentStatus !== "REFUNDED") {
+                            await orderDoc.ref.update({
+                                paymentStatus: "REFUNDED",
+                                status: "CANCELLED",
+                                razorpayRefundId: rzpRefundId || d.razorpayRefundId || "webhook-refund",
+                                refundAmountInr: refundAmountInr || d.refundAmountInr || 0,
+                                webhookRefundedAt: FieldValue.serverTimestamp()
+                            });
+                            console.log(`Order ${orderDoc.id} marked REFUNDED via webhook.`);
+                        }
+                    }
+                } catch (refErr) {
+                    console.error("Error processing refund.processed webhook:", refErr);
+                }
+            }
+        }
+
         return res.status(200).json({ status: "ok" });
     }
 );
@@ -1412,6 +1455,187 @@ exports.releaseOrderReservation = onCall(
         return {
             success: true,
             message: "Non-custom reservation released successfully."
+        };
+    }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. CALLABLE: issueOrderRefund (Admin-Only 1-Click Razorpay Refund + Restock)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.issueOrderRefund = onCall(
+    { secrets: [razorpayKeySecret], cors: true },
+    async (request) => {
+        // Strict Admin Auth Check
+        if (
+            !request.auth ||
+            request.auth.token.email_verified !== true ||
+            !request.auth.token.email ||
+            !ADMIN_EMAILS.includes(request.auth.token.email.toLowerCase())
+        ) {
+            throw new HttpsError("permission-denied", "Admin privileges required.");
+        }
+
+        const data = request.data || {};
+        const orderId = data.orderId;
+        const reason = (data.reason || "Admin initiated refund").toString().trim();
+        const restockInventory = data.restockInventory !== false;
+
+        if (!orderId) {
+            throw new HttpsError("invalid-argument", "Missing order ID.");
+        }
+
+        const adminEmail = (request.auth.token.email || "").toLowerCase();
+        const orderRef = db.collection("orders").doc(orderId);
+        const orderSnap = await orderRef.get();
+
+        if (!orderSnap.exists) {
+            throw new HttpsError("not-found", `Order with ID '${orderId}' not found.`);
+        }
+
+        const orderData = orderSnap.data() || {};
+
+        if (orderData.paymentStatus === "REFUNDED" || orderData.razorpayRefundId) {
+            throw new HttpsError("failed-precondition", "This order has already been refunded.");
+        }
+
+        if (!orderData.razorpayPaymentId || !orderData.razorpayPaymentId.startsWith("pay_")) {
+            throw new HttpsError("failed-precondition", "No Razorpay payment ID found on this order.");
+        }
+
+        // Call Razorpay API to issue refund (omitting amount refunds the entire captured payment)
+        const razorpay = getRazorpayClient();
+        let refund;
+        try {
+            refund = await razorpay.payments.refund(orderData.razorpayPaymentId, {
+                speed: "normal",
+                notes: {
+                    orderId: orderId,
+                    reason: reason,
+                    issuedBy: adminEmail
+                }
+            });
+        } catch (err) {
+            console.error("Razorpay refund execution error:", err);
+            throw new HttpsError("internal", `Razorpay refund failed: ${err.message || err}`);
+        }
+
+        const refundAmountInr = Math.round((refund.amount || 0) / 100);
+
+        // Firestore Order Update + Optional Atomic Restock inside Transaction
+        await db.runTransaction(async (tx) => {
+            const freshOrderSnap = await tx.get(orderRef);
+            if (!freshOrderSnap.exists) {
+                throw new HttpsError("not-found", "Order disappeared during transaction.");
+            }
+            const freshOrderData = freshOrderSnap.data() || {};
+            if (freshOrderData.paymentStatus === "REFUNDED" || freshOrderData.razorpayRefundId) {
+                throw new HttpsError("failed-precondition", "Order was already marked refunded.");
+            }
+
+            const shouldRestock = restockInventory === true &&
+                freshOrderData.stockLocked === true &&
+                freshOrderData.stockRestocked !== true;
+
+            const items = Array.isArray(freshOrderData.items) ? freshOrderData.items : [];
+            const productWorkingMap = new Map();
+
+            // Perform ALL reads first
+            if (shouldRestock && items.length > 0) {
+                const uniqueProductIds = [...new Set(items.map(it => it.productId || it.id).filter(Boolean))];
+                for (const pid of uniqueProductIds) {
+                    const pRef = db.collection("products").doc(pid);
+                    const pSnap = await tx.get(pRef);
+                    if (pSnap.exists) {
+                        const pData = pSnap.data() || {};
+                        productWorkingMap.set(pid, {
+                            ref: pRef,
+                            data: pData,
+                            variants: Array.isArray(pData.variants) ? pData.variants.map(v => ({ ...v })) : [],
+                            stockCount: typeof pData.stockCount === "number" ? pData.stockCount : 0
+                        });
+                    }
+                }
+            }
+
+            // In-memory restock calculations
+            if (shouldRestock && items.length > 0) {
+                for (const item of items) {
+                    const pid = item.productId || item.id;
+                    const qty = Math.max(1, Number(item.quantity || 1));
+                    const pEntry = productWorkingMap.get(pid);
+                    if (!pEntry) continue;
+
+                    const targetVariantId = item.variantId || item.selectedVariantId;
+                    const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
+
+                    if (pEntry.variants.length > 0) {
+                        let matchedIdx = -1;
+                        if (targetVariantId) {
+                            matchedIdx = pEntry.variants.findIndex(v => v && v.id === targetVariantId);
+                        }
+                        if (matchedIdx === -1 && targetColorName && targetColorName !== "standard") {
+                            matchedIdx = pEntry.variants.findIndex(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                        }
+                        if (matchedIdx === -1) {
+                            matchedIdx = 0;
+                        }
+
+                        const v = pEntry.variants[matchedIdx];
+                        if (v) {
+                            const curStock = typeof v.stockCount === "number" ? v.stockCount : 0;
+                            pEntry.variants[matchedIdx] = {
+                                ...v,
+                                stockCount: curStock + qty,
+                                inStock: true
+                            };
+                        }
+                    } else {
+                        pEntry.stockCount += qty;
+                    }
+                }
+            }
+
+            // Perform ALL writes
+            if (shouldRestock && productWorkingMap.size > 0) {
+                for (const pEntry of productWorkingMap.values()) {
+                    if (pEntry.variants.length > 0) {
+                        const productHasStock = pEntry.variants.some(v => v && v.inStock === true && (typeof v.stockCount !== "number" || v.stockCount > 0));
+                        tx.update(pEntry.ref, {
+                            variants: pEntry.variants,
+                            inStock: productHasStock,
+                            updatedAt: FieldValue.serverTimestamp()
+                        });
+                    } else {
+                        tx.update(pEntry.ref, {
+                            stockCount: pEntry.stockCount,
+                            inStock: pEntry.stockCount > 0,
+                            updatedAt: FieldValue.serverTimestamp()
+                        });
+                    }
+                }
+            }
+
+            const orderUpdate = {
+                paymentStatus: "REFUNDED",
+                status: "CANCELLED",
+                razorpayRefundId: refund.id,
+                refundAmountInr: refundAmountInr,
+                refundReason: reason,
+                refundedBy: adminEmail,
+                refundedAt: FieldValue.serverTimestamp()
+            };
+            if (shouldRestock) {
+                orderUpdate.stockRestocked = true;
+            }
+
+            tx.update(orderRef, orderUpdate);
+        });
+
+        return {
+            success: true,
+            refundId: refund.id,
+            refundAmountInr: refundAmountInr,
+            restocked: Boolean(restockInventory && orderData.stockLocked && !orderData.stockRestocked)
         };
     }
 );

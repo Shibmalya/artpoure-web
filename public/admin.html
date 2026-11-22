@@ -313,6 +313,7 @@
                         <button class="filter-pill" data-status="COD">Cash on Delivery</button>
                         <button class="filter-pill" data-status="SHIPPED">Shipped</button>
                         <button class="filter-pill" data-status="DELIVERED">Delivered</button>
+                        <button class="filter-pill" data-status="REFUNDED">Refunded</button>
                     </div>
                 </div>
 
@@ -389,7 +390,39 @@
         </div>
     </div>
 
+    <!-- REFUND CONFIRMATION MODAL -->
+    <div id="refundModal" class="confirm-modal-overlay" style="display: none;">
+        <div class="confirm-modal-card" style="max-width: 480px;">
+            <div class="form-card-header" style="margin-bottom: 16px; padding-bottom: 12px;">
+                <h3 class="confirm-modal-title" style="margin: 0; color: #E74C3C;">💸 Issue Razorpay Refund</h3>
+                <button id="closeRefundModalBtn" class="btn-close-form" title="Close">✕</button>
+            </div>
+            <div class="refund-details-body" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.6;">
+                <p style="margin-bottom: 8px;"><strong>Order ID:</strong> <span id="refundModalOrderId" style="color: var(--text-primary); font-family: monospace; font-weight: 600;"></span></p>
+                <p style="margin-bottom: 8px;"><strong>Razorpay Payment ID:</strong> <span id="refundModalPaymentId" style="color: var(--text-primary); font-family: monospace; font-weight: 600;"></span></p>
+                <p style="margin-bottom: 8px;"><strong>Refund Amount:</strong> <span id="refundModalAmount" style="color: var(--gold); font-weight: 700; font-size: 16px;"></span></p>
+
+                <div class="form-field-group" style="margin-top: 14px;">
+                    <label for="refundReasonInput" style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block;">Refund Reason *</label>
+                    <input type="text" id="refundReasonInput" class="form-input" value="Customer request / Order cancelled" placeholder="e.g. Stock conflict, customer request" style="width: 100%;">
+                </div>
+
+                <div style="margin-top: 14px; display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="refundRestockCheckbox" style="accent-color: var(--gold); width: 16px; height: 16px; cursor: pointer;" checked>
+                    <label for="refundRestockCheckbox" style="font-size: 13px; cursor: pointer; color: var(--text-primary); font-weight: 500;">Restock item(s) back to inventory</label>
+                </div>
+                <small id="refundConflictHint" style="display: none; color: #E74C3C; font-size: 11px; margin-top: 4px;">⚠️ Stock conflict detected on this order: restocking is unchecked by default.</small>
+            </div>
+            <div class="confirm-modal-actions">
+                <button id="refundModalCancelBtn" class="btn-secondary-action">Cancel</button>
+                <button id="refundModalConfirmBtn" class="btn-danger-action">
+                    <span id="refundModalConfirmText">Confirm & Process Refund</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modular Admin Script -->
-    <script type="module" src="admin.js?v=20261122"></script>
+    <script type="module" src="admin.js?v=20261122_refunds"></script>
 </body>
 </html>
