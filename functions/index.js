@@ -1383,16 +1383,40 @@ exports.razorpayWebhook = onRequest(
                     if (!querySnap.empty) {
                         const orderDoc = querySnap.docs[0];
                         const d = orderDoc.data() || {};
-                        if (d.paymentStatus !== "REFUNDED") {
-                            await orderDoc.ref.update({
-                                paymentStatus: "REFUNDED",
-                                status: "CANCELLED",
-                                razorpayRefundId: rzpRefundId || d.razorpayRefundId || "webhook-refund",
-                                refundAmountInr: refundAmountInr || d.refundAmountInr || 0,
-                                webhookRefundedAt: FieldValue.serverTimestamp()
-                            });
-                            console.log(`Order ${orderDoc.id} marked REFUNDED via webhook.`);
+                        const isPartialCod = d.paymentMethod === "PARTIAL_COD" || d.paymentMode === "PARTIAL_COD";
+                        const paidAmountInr = isPartialCod
+                            ? Number(d.advancePaidInr || (d.pricing && d.pricing.codAdvanceInr) || 0)
+                            : Number((d.pricing && d.pricing.grandTotalInr) || d.grandTotalInr || d.grandTotal || 0);
+
+                        const currentTotalRefunded = Number(d.totalRefundedInr || d.refundAmountInr || 0);
+                        const existingRefunds = Array.isArray(d.refunds) ? d.refunds : [];
+                        const isAlreadyRecorded = existingRefunds.some(r => r && r.refundId === rzpRefundId) || d.razorpayRefundId === rzpRefundId;
+
+                        const newTotalRefundedInr = isAlreadyRecorded ? currentTotalRefunded : (currentTotalRefunded + refundAmountInr);
+                        const isFullyRefunded = paidAmountInr > 0 ? (newTotalRefundedInr >= paidAmountInr) : true;
+
+                        const updatePayload = {
+                            paymentStatus: isFullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED",
+                            totalRefundedInr: newTotalRefundedInr,
+                            refundAmountInr: newTotalRefundedInr,
+                            razorpayRefundId: rzpRefundId || d.razorpayRefundId || "webhook-refund",
+                            webhookRefundedAt: FieldValue.serverTimestamp(),
+                            updatedAt: FieldValue.serverTimestamp()
+                        };
+                        if (isFullyRefunded) {
+                            updatePayload.status = "CANCELLED";
                         }
+                        if (!isAlreadyRecorded && rzpRefundId) {
+                            updatePayload.refunds = FieldValue.arrayUnion({
+                                refundId: rzpRefundId,
+                                amountInr: refundAmountInr,
+                                reason: "Razorpay Dashboard webhook refund",
+                                refundedBy: "razorpay_webhook",
+                                refundedAt: new Date().toISOString()
+                            });
+                        }
+                        await orderDoc.ref.update(updatePayload);
+                        console.log(`Order ${orderDoc.id} updated via webhook: ${isFullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED"} (₹${newTotalRefundedInr}/₹${paidAmountInr})`);
                     }
                 } catch (refErr) {
                     console.error("Error processing refund.processed webhook:", refErr);
@@ -1460,7 +1484,7 @@ exports.releaseOrderReservation = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. CALLABLE: issueOrderRefund (Admin-Only 1-Click Razorpay Refund + Restock)
+// 6. CALLABLE: issueOrderRefund (Admin-Only Razorpay Refund: Full or Partial + Restock)
 // ─────────────────────────────────────────────────────────────────────────────
 exports.issueOrderRefund = onCall(
     { secrets: [razorpayKeySecret], cors: true },
@@ -1478,7 +1502,8 @@ exports.issueOrderRefund = onCall(
         const data = request.data || {};
         const orderId = data.orderId;
         const reason = (data.reason || "Admin initiated refund").toString().trim();
-        const restockInventory = data.restockInventory !== false;
+        const restockInventory = Boolean(data.restockInventory);
+        const rawRefundAmountInr = data.refundAmountInr;
 
         if (!orderId) {
             throw new HttpsError("invalid-argument", "Missing order ID.");
@@ -1494,24 +1519,46 @@ exports.issueOrderRefund = onCall(
 
         const orderData = orderSnap.data() || {};
 
-        if (orderData.paymentStatus === "REFUNDED" || orderData.razorpayRefundId) {
-            throw new HttpsError("failed-precondition", "This order has already been refunded.");
-        }
-
         if (!orderData.razorpayPaymentId || !orderData.razorpayPaymentId.startsWith("pay_")) {
-            throw new HttpsError("failed-precondition", "No Razorpay payment ID found on this order.");
+            throw new HttpsError("failed-precondition", "No valid Razorpay payment ID found on this order.");
         }
 
-        // Call Razorpay API to issue refund (omitting amount refunds the entire captured payment)
+        const isPartialCod = orderData.paymentMethod === "PARTIAL_COD" || orderData.paymentMode === "PARTIAL_COD";
+        const paidAmountInr = isPartialCod
+            ? Number(orderData.advancePaidInr || (orderData.pricing && orderData.pricing.codAdvanceInr) || 0)
+            : Number((orderData.pricing && orderData.pricing.grandTotalInr) || orderData.grandTotalInr || orderData.grandTotal || 0);
+
+        const alreadyRefundedInr = Number(orderData.totalRefundedInr || orderData.refundAmountInr || 0);
+        const remainingRefundableInr = Math.max(0, paidAmountInr - alreadyRefundedInr);
+
+        if (remainingRefundableInr <= 0 || orderData.paymentStatus === "REFUNDED") {
+            throw new HttpsError("failed-precondition", "This order has already been fully refunded.");
+        }
+
+        let requestedAmountInr;
+        if (rawRefundAmountInr === undefined || rawRefundAmountInr === null || rawRefundAmountInr === "") {
+            requestedAmountInr = remainingRefundableInr;
+        } else {
+            requestedAmountInr = Number(rawRefundAmountInr);
+        }
+
+        if (!Number.isFinite(requestedAmountInr) || requestedAmountInr < 1 || requestedAmountInr > remainingRefundableInr) {
+            throw new HttpsError("invalid-argument", `Refund amount must be between ₹1 and ₹${remainingRefundableInr}.`);
+        }
+        requestedAmountInr = Math.round(requestedAmountInr);
+
+        // Call Razorpay API with exact paise
         const razorpay = getRazorpayClient();
         let refund;
         try {
             refund = await razorpay.payments.refund(orderData.razorpayPaymentId, {
+                amount: Math.round(requestedAmountInr * 100),
                 speed: "normal",
                 notes: {
                     orderId: orderId,
                     reason: reason,
-                    issuedBy: adminEmail
+                    issuedBy: adminEmail,
+                    type: requestedAmountInr >= remainingRefundableInr ? "FULL" : "PARTIAL"
                 }
             });
         } catch (err) {
@@ -1519,7 +1566,11 @@ exports.issueOrderRefund = onCall(
             throw new HttpsError("internal", `Razorpay refund failed: ${err.message || err}`);
         }
 
-        const refundAmountInr = Math.round((refund.amount || 0) / 100);
+        const actualRefundedInr = Math.round((refund.amount || 0) / 100) || requestedAmountInr;
+
+        let finalTotalRefundedInr = alreadyRefundedInr + actualRefundedInr;
+        let isFullyRefunded = finalTotalRefundedInr >= paidAmountInr;
+        let shouldRestock = false;
 
         // Firestore Order Update + Optional Atomic Restock inside Transaction
         await db.runTransaction(async (tx) => {
@@ -1528,11 +1579,11 @@ exports.issueOrderRefund = onCall(
                 throw new HttpsError("not-found", "Order disappeared during transaction.");
             }
             const freshOrderData = freshOrderSnap.data() || {};
-            if (freshOrderData.paymentStatus === "REFUNDED" || freshOrderData.razorpayRefundId) {
-                throw new HttpsError("failed-precondition", "Order was already marked refunded.");
-            }
+            const freshAlreadyRefunded = Number(freshOrderData.totalRefundedInr || freshOrderData.refundAmountInr || 0);
+            finalTotalRefundedInr = freshAlreadyRefunded + actualRefundedInr;
+            isFullyRefunded = finalTotalRefundedInr >= paidAmountInr;
 
-            const shouldRestock = restockInventory === true &&
+            shouldRestock = restockInventory === true &&
                 freshOrderData.stockLocked === true &&
                 freshOrderData.stockRestocked !== true;
 
@@ -1615,15 +1666,30 @@ exports.issueOrderRefund = onCall(
                 }
             }
 
+            const refundEntry = {
+                refundId: refund.id,
+                amountInr: actualRefundedInr,
+                reason: reason,
+                refundedBy: adminEmail,
+                refundedAt: new Date().toISOString()
+            };
+
             const orderUpdate = {
-                paymentStatus: "REFUNDED",
-                status: "CANCELLED",
+                paymentStatus: isFullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED",
+                totalRefundedInr: finalTotalRefundedInr,
+                refundAmountInr: finalTotalRefundedInr,
                 razorpayRefundId: refund.id,
-                refundAmountInr: refundAmountInr,
                 refundReason: reason,
                 refundedBy: adminEmail,
-                refundedAt: FieldValue.serverTimestamp()
+                refundedAt: FieldValue.serverTimestamp(),
+                refunds: FieldValue.arrayUnion(refundEntry),
+                updatedAt: FieldValue.serverTimestamp()
             };
+
+            // Only mark order CANCELLED if fully refunded
+            if (isFullyRefunded) {
+                orderUpdate.status = "CANCELLED";
+            }
             if (shouldRestock) {
                 orderUpdate.stockRestocked = true;
             }
@@ -1634,8 +1700,11 @@ exports.issueOrderRefund = onCall(
         return {
             success: true,
             refundId: refund.id,
-            refundAmountInr: refundAmountInr,
-            restocked: Boolean(restockInventory && orderData.stockLocked && !orderData.stockRestocked)
+            refundAmountInr: actualRefundedInr,
+            totalRefundedInr: finalTotalRefundedInr,
+            remainingRefundableInr: Math.max(0, paidAmountInr - finalTotalRefundedInr),
+            paymentStatus: isFullyRefunded ? "REFUNDED" : "PARTIALLY_REFUNDED",
+            restocked: Boolean(shouldRestock)
         };
     }
 );

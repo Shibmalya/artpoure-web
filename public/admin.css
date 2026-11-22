@@ -1191,6 +1191,13 @@ body {
     font-weight: 600;
 }
 
+.status-badge.partially_refunded {
+    background: rgba(255, 183, 77, 0.18);
+    color: #FFB74D;
+    border: 1px solid rgba(255, 183, 77, 0.45);
+    font-weight: 600;
+}
+
 .order-card.has-conflict {
     border-color: #E53935 !important;
     box-shadow: 0 0 16px rgba(229, 57, 53, 0.25);

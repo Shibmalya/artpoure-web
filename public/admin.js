@@ -125,10 +125,17 @@ const el = {
     closeRefundModalBtn: document.getElementById('closeRefundModalBtn'),
     refundModalOrderId: document.getElementById('refundModalOrderId'),
     refundModalPaymentId: document.getElementById('refundModalPaymentId'),
-    refundModalAmount: document.getElementById('refundModalAmount'),
+    refundModalPaidAmount: document.getElementById('refundModalPaidAmount'),
+    refundModalAlreadyRefundedRow: document.getElementById('refundModalAlreadyRefundedRow'),
+    refundModalAlreadyRefunded: document.getElementById('refundModalAlreadyRefunded'),
+    refundModalRemainingRefundable: document.getElementById('refundModalRemainingRefundable'),
+    refundFullAmountBtn: document.getElementById('refundFullAmountBtn'),
+    refundAmountInput: document.getElementById('refundAmountInput'),
+    refundAmountValidationMsg: document.getElementById('refundAmountValidationMsg'),
     refundReasonInput: document.getElementById('refundReasonInput'),
     refundRestockCheckbox: document.getElementById('refundRestockCheckbox'),
     refundConflictHint: document.getElementById('refundConflictHint'),
+    refundPartialRestockHint: document.getElementById('refundPartialRestockHint'),
     refundModalCancelBtn: document.getElementById('refundModalCancelBtn'),
     refundModalConfirmBtn: document.getElementById('refundModalConfirmBtn'),
     refundModalConfirmText: document.getElementById('refundModalConfirmText')
@@ -998,6 +1005,21 @@ async function fetchOrders() {
     }
 }
 
+function getOrderRefundStats(ord) {
+    const isPartialCod = ord.paymentMethod === 'PARTIAL_COD' || ord.paymentMode === 'PARTIAL_COD';
+    const paidAmountInr = isPartialCod
+        ? Number(ord.advancePaidInr || (ord.pricing && ord.pricing.codAdvanceInr) || 0)
+        : Number((ord.pricing && ord.pricing.grandTotalInr) || ord.grandTotalInr || 0);
+
+    const alreadyRefundedInr = Number(ord.totalRefundedInr || ord.refundAmountInr || 0);
+    const remainingRefundableInr = Math.max(0, paidAmountInr - alreadyRefundedInr);
+    const rawPayStatus = (ord.paymentStatus || '').toUpperCase();
+    const isFullyRefunded = rawPayStatus === 'REFUNDED' || (paidAmountInr > 0 && remainingRefundableInr <= 0);
+    const isPartiallyRefunded = !isFullyRefunded && (rawPayStatus === 'PARTIALLY_REFUNDED' || (alreadyRefundedInr > 0 && remainingRefundableInr > 0));
+
+    return { isPartialCod, paidAmountInr, alreadyRefundedInr, remainingRefundableInr, isFullyRefunded, isPartiallyRefunded };
+}
+
 function renderOrdersList() {
     const queryStr = state.orderSearchQuery.toLowerCase().trim();
     const filterStatus = state.orderFilterStatus;
@@ -1015,7 +1037,7 @@ function renderOrdersList() {
         else if (filterStatus === 'COD') matchesFilter = payMethod === 'COD';
         else if (filterStatus === 'SHIPPED') matchesFilter = status === 'SHIPPED';
         else if (filterStatus === 'DELIVERED') matchesFilter = status === 'DELIVERED';
-        else if (filterStatus === 'REFUNDED') matchesFilter = payStatus === 'REFUNDED';
+        else if (filterStatus === 'REFUNDED') matchesFilter = payStatus === 'REFUNDED' || payStatus === 'PARTIALLY_REFUNDED';
 
         const matchesSearch = !queryStr ||
             (ord.id && ord.id.toLowerCase().includes(queryStr)) ||
@@ -1067,30 +1089,41 @@ function renderOrdersList() {
             `;
         }).join('');
 
+        const stats = getOrderRefundStats(ord);
         const hasConflict = Boolean(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED');
         const rzpPayId = ord.razorpayPaymentId || '';
-        const canRefund = rzpPayId.startsWith('pay_') && payStatus !== 'REFUNDED' && (
+        const canRefund = rzpPayId.startsWith('pay_') && stats.remainingRefundableInr > 0 && (
             payStatus === 'PAID' ||
             payStatus === 'PARTIAL_PAID' ||
+            payStatus === 'PARTIALLY_REFUNDED' ||
             hasConflict
         );
 
-        const payStatusClass = payStatus === 'REFUNDED'
-            ? 'refunded'
-            : ((payStatus === 'PAID' || payStatus === 'COLLECTED') ? 'paid' : (payMethod === 'COD' ? 'cod' : 'pending'));
-        const fulfillStatusClass = fulfillmentStatus.toLowerCase();
-
+        let payStatusClass = 'pending';
         let payBadgeText = '';
-        if (payStatus === 'REFUNDED') {
+
+        if (stats.isFullyRefunded) {
+            payStatusClass = 'refunded';
             const shortRefundId = ord.razorpayRefundId || 'PROCESSED';
-            payBadgeText = `REFUNDED • ${shortRefundId}`;
+            payBadgeText = `REFUNDED • ₹${stats.alreadyRefundedInr.toLocaleString('en-IN')} (${shortRefundId})`;
+        } else if (stats.isPartiallyRefunded) {
+            payStatusClass = 'partially_refunded';
+            payBadgeText = `PARTIALLY REFUNDED • ₹${stats.alreadyRefundedInr.toLocaleString('en-IN')} / ₹${stats.paidAmountInr.toLocaleString('en-IN')}`;
         } else if (payMethod === 'COD') {
+            payStatusClass = (payStatus === 'COLLECTED' ? 'paid' : 'cod');
             payBadgeText = (payStatus === 'COLLECTED' ? 'COD: COLLECTED' : 'COD: PENDING_COD');
         } else if (payStatus === 'PARTIAL_PAID') {
+            payStatusClass = 'pending';
             payBadgeText = `PARTIAL PAID (₹${ord.advancePaidInr || 299})`;
+        } else if (payStatus === 'PAID' || payStatus === 'COLLECTED') {
+            payStatusClass = 'paid';
+            payBadgeText = 'PREPAID: PAID';
         } else {
-            payBadgeText = (payStatus === 'PAID' ? 'PREPAID: PAID' : 'PREPAID: PENDING');
+            payStatusClass = 'pending';
+            payBadgeText = 'PREPAID: PENDING';
         }
+
+        const fulfillStatusClass = fulfillmentStatus.toLowerCase();
 
         return `
             <div class="order-card ${hasConflict ? 'has-conflict' : ''}" data-order-id="${ord.id}">
@@ -1110,7 +1143,7 @@ function renderOrdersList() {
                         <div>⚠️ <strong>STOCK CONFLICT DETECTED:</strong> ${ord.conflictReason || '1-of-1 piece was claimed in another checkout. Please issue an immediate refund.'}</div>
                         ${canRefund ? `
                             <button type="button" class="btn-danger-action btn-sm issue-refund-btn" data-id="${ord.id}" style="padding: 5px 14px; font-size: 12px;">
-                                <span>💸 Issue Refund</span>
+                                <span>💸 Issue Refund (₹${stats.remainingRefundableInr.toLocaleString('en-IN')})</span>
                             </button>
                         ` : ''}
                     </div>
@@ -1173,6 +1206,7 @@ function renderOrdersList() {
                             ` : `
                                 <option value="PAID" ${payStatus === 'PAID' ? 'selected' : ''}>PREPAID: PAID</option>
                                 <option value="PENDING" ${payStatus === 'PENDING' ? 'selected' : ''}>PREPAID: PENDING</option>
+                                <option value="PARTIALLY_REFUNDED" ${payStatus === 'PARTIALLY_REFUNDED' ? 'selected' : ''}>PARTIALLY REFUNDED</option>
                                 <option value="REFUNDED" ${payStatus === 'REFUNDED' ? 'selected' : ''}>REFUNDED</option>
                                 <option value="FAILED" ${payStatus === 'FAILED' ? 'selected' : ''}>FAILED</option>
                             `}
@@ -1188,13 +1222,19 @@ function renderOrdersList() {
 
                     ${canRefund ? `
                         <button type="button" class="btn-danger-action btn-sm issue-refund-btn" data-id="${ord.id}" style="background: rgba(229, 57, 53, 0.2); border: 1px solid #E53935; color: #FFCDD2;">
-                            <span>💸 Issue Refund</span>
+                            <span>💸 Issue Refund ${stats.isPartiallyRefunded ? `(₹${stats.remainingRefundableInr.toLocaleString('en-IN')} Left)` : ''}</span>
                         </button>
                     ` : ''}
 
-                    ${payStatus === 'REFUNDED' ? `
+                    ${stats.isFullyRefunded ? `
                         <span style="font-size: 11px; color: #EF5350; font-weight: 600; padding: 4px 8px; background: rgba(239, 83, 80, 0.1); border-radius: 4px;">
-                            ✓ Refunded ${ord.refundAmountInr ? `(₹${Number(ord.refundAmountInr).toLocaleString('en-IN')})` : ''} via Razorpay
+                            ✓ Fully Refunded (₹${stats.alreadyRefundedInr.toLocaleString('en-IN')}) via Razorpay
+                        </span>
+                    ` : ''}
+
+                    ${stats.isPartiallyRefunded ? `
+                        <span style="font-size: 11px; color: #FFB74D; font-weight: 600; padding: 4px 8px; background: rgba(255, 183, 77, 0.1); border-radius: 4px;">
+                            ℹ️ Refunded ₹${stats.alreadyRefundedInr.toLocaleString('en-IN')} • ₹${stats.remainingRefundableInr.toLocaleString('en-IN')} remaining
                         </span>
                     ` : ''}
                 </div>
@@ -1270,34 +1310,88 @@ function openRefundModal(orderId) {
     if (!ord) return;
 
     state.currentRefundOrder = ord;
-    const isPartialCod = ord.paymentMethod === 'PARTIAL_COD' || ord.paymentMode === 'PARTIAL_COD';
+    const stats = getOrderRefundStats(ord);
     const fulfillmentStatus = (ord.status || 'CONFIRMED').toUpperCase();
     const hasConflict = Boolean(ord.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED');
 
     el.refundModalOrderId.textContent = ord.orderId || ord.id;
     el.refundModalPaymentId.textContent = ord.razorpayPaymentId || 'N/A';
 
-    if (isPartialCod) {
-        const adv = ord.advancePaidInr || 299;
-        el.refundModalAmount.textContent = `₹${Number(adv).toLocaleString('en-IN')} (Partial-COD Advance Token)`;
+    el.refundModalPaidAmount.textContent = `₹${stats.paidAmountInr.toLocaleString('en-IN')}${stats.isPartialCod ? ' (Partial-COD Advance)' : ''}`;
+
+    if (stats.alreadyRefundedInr > 0) {
+        el.refundModalAlreadyRefunded.textContent = `₹${stats.alreadyRefundedInr.toLocaleString('en-IN')}`;
+        el.refundModalAlreadyRefundedRow.style.display = 'flex';
     } else {
-        const grandTotal = (ord.pricing && ord.pricing.grandTotalInr) || ord.grandTotalInr || 0;
-        el.refundModalAmount.textContent = `₹${Number(grandTotal).toLocaleString('en-IN')} (Full Captured Payment)`;
+        el.refundModalAlreadyRefundedRow.style.display = 'none';
     }
 
-    el.refundReasonInput.value = hasConflict ? 'Stock conflict / item unavailable' : 'Customer request / Order cancelled';
+    el.refundModalRemainingRefundable.textContent = `₹${stats.remainingRefundableInr.toLocaleString('en-IN')}`;
+
+    el.refundAmountInput.max = stats.remainingRefundableInr;
+    el.refundAmountInput.value = stats.remainingRefundableInr;
+    el.refundFullAmountBtn.textContent = `Full Remaining (₹${stats.remainingRefundableInr.toLocaleString('en-IN')})`;
 
     if (hasConflict) {
+        el.refundReasonInput.value = 'Stock conflict / item unavailable';
         el.refundRestockCheckbox.checked = false;
         if (el.refundConflictHint) el.refundConflictHint.style.display = 'block';
+        if (el.refundPartialRestockHint) el.refundPartialRestockHint.style.display = 'none';
+    } else if (stats.isPartiallyRefunded) {
+        el.refundReasonInput.value = 'Goodwill adjustment / partial return';
+        el.refundRestockCheckbox.checked = false;
+        if (el.refundConflictHint) el.refundConflictHint.style.display = 'none';
+        if (el.refundPartialRestockHint) el.refundPartialRestockHint.style.display = 'block';
     } else {
+        el.refundReasonInput.value = 'Customer request / Order cancelled';
         el.refundRestockCheckbox.checked = true;
         if (el.refundConflictHint) el.refundConflictHint.style.display = 'none';
+        if (el.refundPartialRestockHint) el.refundPartialRestockHint.style.display = 'none';
     }
 
-    el.refundModalConfirmBtn.disabled = false;
-    el.refundModalConfirmText.textContent = 'Confirm & Process Refund';
+    validateRefundAmount();
     el.refundModal.style.display = 'flex';
+}
+
+function validateRefundAmount() {
+    if (!state.currentRefundOrder) return false;
+    const stats = getOrderRefundStats(state.currentRefundOrder);
+    const val = Number(el.refundAmountInput.value);
+
+    if (!val || isNaN(val) || val < 1) {
+        el.refundAmountValidationMsg.textContent = 'Please enter a refund amount of at least ₹1.';
+        el.refundAmountValidationMsg.style.display = 'block';
+        el.refundModalConfirmBtn.disabled = true;
+        el.refundModalConfirmText.textContent = 'Invalid Amount';
+        return false;
+    }
+
+    if (val > stats.remainingRefundableInr) {
+        el.refundAmountValidationMsg.textContent = `Amount cannot exceed max refundable balance of ₹${stats.remainingRefundableInr.toLocaleString('en-IN')}.`;
+        el.refundAmountValidationMsg.style.display = 'block';
+        el.refundModalConfirmBtn.disabled = true;
+        el.refundModalConfirmText.textContent = 'Amount Exceeds Balance';
+        return false;
+    }
+
+    el.refundAmountValidationMsg.style.display = 'none';
+    el.refundModalConfirmBtn.disabled = false;
+    el.refundModalConfirmText.textContent = `Refund ₹${Math.round(val).toLocaleString('en-IN')}`;
+
+    // Smart restock toggle: if partial refund (< max refundable), auto-uncheck restock (unless conflict)
+    const fulfillmentStatus = (state.currentRefundOrder.status || 'CONFIRMED').toUpperCase();
+    const hasConflict = Boolean(state.currentRefundOrder.stockConflict || fulfillmentStatus === 'CONFLICT_REFUND_REQUIRED');
+    if (!hasConflict) {
+        if (val < stats.remainingRefundableInr) {
+            el.refundRestockCheckbox.checked = false;
+            if (el.refundPartialRestockHint) el.refundPartialRestockHint.style.display = 'block';
+        } else {
+            el.refundRestockCheckbox.checked = true;
+            if (el.refundPartialRestockHint) el.refundPartialRestockHint.style.display = 'none';
+        }
+    }
+
+    return true;
 }
 
 function closeRefundModal() {
@@ -1307,7 +1401,10 @@ function closeRefundModal() {
 
 async function executeRefund() {
     if (!state.currentRefundOrder) return;
+    if (!validateRefundAmount()) return;
+
     const ord = state.currentRefundOrder;
+    const requestedAmount = Math.round(Number(el.refundAmountInput.value));
     const reasonVal = el.refundReasonInput.value.trim() || 'Admin initiated refund';
     const shouldRestock = el.refundRestockCheckbox.checked;
 
@@ -1318,6 +1415,7 @@ async function executeRefund() {
         const issueOrderRefundCallable = httpsCallable(functions, 'issueOrderRefund');
         const result = await issueOrderRefundCallable({
             orderId: ord.id,
+            refundAmountInr: requestedAmount,
             reason: reasonVal,
             restockInventory: shouldRestock
         });
@@ -1325,16 +1423,17 @@ async function executeRefund() {
         const data = result.data || {};
         const refundId = data.refundId || 'Processed';
         const refundAmt = data.refundAmountInr ? ` (₹${Number(data.refundAmountInr).toLocaleString('en-IN')})` : '';
+        const remainingMsg = data.remainingRefundableInr > 0 ? ` • ₹${Number(data.remainingRefundableInr).toLocaleString('en-IN')} remaining` : ' • Fully Refunded';
         const restockMsg = data.restocked ? ' • Inventory Restocked' : '';
 
-        showToast(`Refund processed successfully! ID: ${refundId}${refundAmt}${restockMsg}`, 'success');
+        showToast(`Refund processed successfully! ID: ${refundId}${refundAmt}${remainingMsg}${restockMsg}`, 'success');
         closeRefundModal();
         await fetchOrders();
     } catch (err) {
         console.error('Error issuing refund:', err);
         showToast(`Refund failed: ${err.message || err}`, 'error');
         el.refundModalConfirmBtn.disabled = false;
-        el.refundModalConfirmText.textContent = 'Confirm & Process Refund';
+        validateRefundAmount();
     }
 }
 
@@ -1346,6 +1445,17 @@ if (el.refundModalCancelBtn) {
 }
 if (el.refundModalConfirmBtn) {
     el.refundModalConfirmBtn.addEventListener('click', executeRefund);
+}
+if (el.refundAmountInput) {
+    el.refundAmountInput.addEventListener('input', validateRefundAmount);
+}
+if (el.refundFullAmountBtn) {
+    el.refundFullAmountBtn.addEventListener('click', () => {
+        if (!state.currentRefundOrder) return;
+        const stats = getOrderRefundStats(state.currentRefundOrder);
+        el.refundAmountInput.value = stats.remainingRefundableInr;
+        validateRefundAmount();
+    });
 }
 
 el.refreshOrdersBtn.addEventListener('click', fetchOrders);
