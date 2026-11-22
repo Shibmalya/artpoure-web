@@ -1710,6 +1710,304 @@ exports.issueOrderRefund = onCall(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 7. CALLABLE: razorpayAdmin (Unified Admin-Only Razorpay Control Hub)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.razorpayAdmin = onCall(
+    { secrets: [razorpayKeySecret], cors: true },
+    async (request) => {
+        // Strict Admin Gate
+        if (
+            !request.auth ||
+            request.auth.token.email_verified !== true ||
+            !request.auth.token.email ||
+            !ADMIN_EMAILS.includes(request.auth.token.email.toLowerCase())
+        ) {
+            throw new HttpsError("permission-denied", "Admin privileges required.");
+        }
+
+        const adminEmail = (request.auth.token.email || "").toLowerCase();
+        const { action, payload = {} } = request.data || {};
+
+        if (!action || typeof action !== "string") {
+            throw new HttpsError("invalid-argument", "Missing or invalid 'action'.");
+        }
+
+        const razorpay = getRazorpayClient();
+
+        try {
+            switch (action) {
+                case "listPayments": {
+                    const query = {
+                        count: Math.min(50, Math.max(1, Number(payload.count) || 25)),
+                        skip: Math.max(0, Number(payload.skip) || 0)
+                    };
+                    if (payload.from) query.from = Number(payload.from);
+                    if (payload.to) query.to = Number(payload.to);
+
+                    const res = await razorpay.payments.all(query);
+                    const rawItems = Array.isArray(res.items) ? res.items : (Array.isArray(res) ? res : []);
+                    const payments = rawItems.map(p => ({
+                        id: p.id,
+                        order_id: p.order_id || null,
+                        amountInr: Math.round((p.amount || 0) / 100),
+                        status: p.status,
+                        method: p.method,
+                        vpa: p.vpa || null,
+                        card: p.card ? {
+                            last4: p.card.last4 || null,
+                            network: p.card.network || null
+                        } : null,
+                        bank: p.bank || null,
+                        wallet: p.wallet || null,
+                        email: p.email || null,
+                        contact: p.contact || null,
+                        feeInr: typeof p.fee === "number" ? Math.round(p.fee / 100) : 0,
+                        taxInr: typeof p.tax === "number" ? Math.round(p.tax / 100) : 0,
+                        amountRefundedInr: typeof p.amount_refunded === "number" ? Math.round(p.amount_refunded / 100) : 0,
+                        refund_status: p.refund_status || null,
+                        rrn: (p.acquirer_data && (p.acquirer_data.rrn || p.acquirer_data.upi_transaction_id)) || null,
+                        error_description: p.error_description || null,
+                        notes: p.notes || {},
+                        created_at: p.created_at
+                    }));
+
+                    return { count: res.count || payments.length, items: payments };
+                }
+
+                case "capturePayment": {
+                    const paymentId = payload.paymentId;
+                    const amountInr = Number(payload.amountInr);
+                    if (!paymentId || !amountInr || amountInr < 1) {
+                        throw new HttpsError("invalid-argument", "Valid 'paymentId' and 'amountInr' (>= 1) are required.");
+                    }
+
+                    const payment = await razorpay.payments.capture(paymentId, Math.round(amountInr * 100), "INR");
+                    return {
+                        success: true,
+                        payment: {
+                            id: payment.id,
+                            order_id: payment.order_id || null,
+                            amountInr: Math.round((payment.amount || 0) / 100),
+                            status: payment.status,
+                            method: payment.method,
+                            created_at: payment.created_at
+                        }
+                    };
+                }
+
+                case "listRefunds": {
+                    const query = {
+                        count: Math.min(50, Math.max(1, Number(payload.count) || 25)),
+                        skip: Math.max(0, Number(payload.skip) || 0)
+                    };
+                    if (payload.from) query.from = Number(payload.from);
+                    if (payload.to) query.to = Number(payload.to);
+
+                    const res = await razorpay.refunds.all(query);
+                    const rawItems = Array.isArray(res.items) ? res.items : (Array.isArray(res) ? res : []);
+                    const refunds = rawItems.map(r => ({
+                        id: r.id,
+                        payment_id: r.payment_id,
+                        amountInr: Math.round((r.amount || 0) / 100),
+                        status: r.status,
+                        speed_processed: r.speed_processed || null,
+                        rrn: (r.acquirer_data && (r.acquirer_data.rrn || r.acquirer_data.arn)) || null,
+                        notes: r.notes || {},
+                        created_at: r.created_at
+                    }));
+
+                    return { count: res.count || refunds.length, items: refunds };
+                }
+
+                case "listSettlements": {
+                    const query = {
+                        count: Math.min(50, Math.max(1, Number(payload.count) || 25)),
+                        skip: Math.max(0, Number(payload.skip) || 0)
+                    };
+                    if (payload.from) query.from = Number(payload.from);
+                    if (payload.to) query.to = Number(payload.to);
+
+                    const res = await razorpay.settlements.all(query);
+                    const rawItems = Array.isArray(res.items) ? res.items : (Array.isArray(res) ? res : []);
+                    const settlements = rawItems.map(s => ({
+                        id: s.id,
+                        amountInr: Math.round((s.amount || 0) / 100),
+                        status: s.status,
+                        feesInr: typeof s.fees === "number" ? Math.round(s.fees / 100) : 0,
+                        taxInr: typeof s.tax === "number" ? Math.round(s.tax / 100) : 0,
+                        utr: s.utr || null,
+                        created_at: s.created_at
+                    }));
+
+                    return { count: res.count || settlements.length, items: settlements };
+                }
+
+                case "listPaymentLinks": {
+                    const query = {
+                        count: Math.min(30, Math.max(1, Number(payload.count) || 20))
+                    };
+                    const res = await razorpay.paymentLink.all(query);
+                    const rawLinks = Array.isArray(res.payment_links) ? res.payment_links : (Array.isArray(res.items) ? res.items : (Array.isArray(res) ? res : []));
+                    const paymentLinks = rawLinks.map(l => ({
+                        id: l.id,
+                        short_url: l.short_url,
+                        amountInr: Math.round((l.amount || 0) / 100),
+                        amountPaidInr: Math.round((l.amount_paid || 0) / 100),
+                        status: l.status,
+                        description: l.description || "",
+                        customer: l.customer || {},
+                        created_at: l.created_at,
+                        expire_by: l.expire_by || null
+                    }));
+
+                    return { count: res.count || paymentLinks.length, payment_links: paymentLinks };
+                }
+
+                case "createPaymentLink": {
+                    const amountInr = Number(payload.amountInr);
+                    const description = (payload.description || "").toString().trim();
+                    const customerName = (payload.customerName || "").toString().trim();
+                    const customerEmail = payload.customerEmail ? payload.customerEmail.toString().trim().toLowerCase() : null;
+
+                    if (!amountInr || amountInr < 1) {
+                        throw new HttpsError("invalid-argument", "Amount must be at least ₹1.");
+                    }
+                    if (!description) {
+                        throw new HttpsError("invalid-argument", "Description is required.");
+                    }
+                    if (!customerName) {
+                        throw new HttpsError("invalid-argument", "Customer name is required.");
+                    }
+
+                    let rawPhone = (payload.customerPhone || "").toString().replace(/[^0-9]/g, "");
+                    if (rawPhone.length === 12 && rawPhone.startsWith("91")) {
+                        rawPhone = rawPhone.slice(2);
+                    }
+                    if (rawPhone.length !== 10) {
+                        throw new HttpsError("invalid-argument", "Customer phone must be a valid 10-digit mobile number.");
+                    }
+                    const formattedPhone = `+91${rawPhone}`;
+
+                    const linkPayload = {
+                        amount: Math.round(amountInr * 100),
+                        currency: "INR",
+                        accept_partial: Boolean(payload.acceptPartial),
+                        description: description,
+                        customer: {
+                            name: customerName,
+                            contact: formattedPhone,
+                            ...(customerEmail ? { email: customerEmail } : {})
+                        },
+                        notify: {
+                            sms: true,
+                            email: Boolean(customerEmail)
+                        },
+                        reminder_enable: true,
+                        notes: {
+                            source: "artpoure_admin",
+                            createdBy: adminEmail
+                        }
+                    };
+
+                    const link = await razorpay.paymentLink.create(linkPayload);
+                    return {
+                        success: true,
+                        id: link.id,
+                        short_url: link.short_url,
+                        status: link.status,
+                        amountInr: amountInr
+                    };
+                }
+
+                case "cancelPaymentLink": {
+                    const paymentLinkId = payload.paymentLinkId;
+                    if (!paymentLinkId) {
+                        throw new HttpsError("invalid-argument", "Missing 'paymentLinkId'.");
+                    }
+                    await razorpay.paymentLink.cancel(paymentLinkId);
+                    return { success: true, status: "cancelled" };
+                }
+
+                case "reconcileOrder": {
+                    const orderId = payload.orderId;
+                    if (!orderId) {
+                        throw new HttpsError("invalid-argument", "Missing 'orderId'.");
+                    }
+
+                    const orderRef = db.collection("orders").doc(orderId);
+                    const orderSnap = await orderRef.get();
+                    if (!orderSnap.exists) {
+                        throw new HttpsError("not-found", `Order '${orderId}' not found.`);
+                    }
+
+                    const orderData = orderSnap.data() || {};
+                    let capturedPayment = null;
+
+                    if (orderData.razorpayOrderId) {
+                        const paymentsRes = await razorpay.orders.fetchPayments(orderData.razorpayOrderId);
+                        const payments = Array.isArray(paymentsRes.items) ? paymentsRes.items : (Array.isArray(paymentsRes) ? paymentsRes : []);
+                        capturedPayment = payments.find(p => p.status === "captured" || p.status === "paid");
+                    } else if (orderData.razorpayPaymentId) {
+                        const p = await razorpay.payments.fetch(orderData.razorpayPaymentId);
+                        if (p && (p.status === "captured" || p.status === "paid")) {
+                            capturedPayment = p;
+                        }
+                    }
+
+                    const currentStatus = (orderData.status || "").toUpperCase();
+                    const currentPayStatus = (orderData.paymentStatus || "").toUpperCase();
+                    const isPending = currentStatus === "PENDING" || currentPayStatus === "PENDING" || currentPayStatus === "PENDING_ADVANCE";
+
+                    if (capturedPayment && isPending) {
+                        const isPartialCod = orderData.paymentMethod === "PARTIAL_COD" || orderData.paymentMode === "PARTIAL_COD";
+                        const targetPayStatus = isPartialCod ? "PARTIAL_PAID" : "PAID";
+                        const updatePayload = {
+                            status: "CONFIRMED",
+                            paymentStatus: targetPayStatus,
+                            razorpayPaymentId: capturedPayment.id,
+                            paidAt: FieldValue.serverTimestamp(),
+                            updatedAt: FieldValue.serverTimestamp(),
+                            reconciledAt: FieldValue.serverTimestamp(),
+                            reconciledBy: adminEmail
+                        };
+                        if (isPartialCod && !orderData.advancePaidInr) {
+                            updatePayload.advancePaidInr = Math.round((capturedPayment.amount || 0) / 100);
+                        }
+
+                        await orderRef.update(updatePayload);
+                        await lockArtClusiveStockForOrder(orderRef, orderData);
+
+                        return {
+                            success: true,
+                            reconciled: true,
+                            paymentStatus: targetPayStatus,
+                            razorpayPaymentId: capturedPayment.id
+                        };
+                    }
+
+                    return {
+                        success: true,
+                        reconciled: false,
+                        paymentStatus: orderData.paymentStatus || "PENDING",
+                        razorpayPaymentId: capturedPayment ? capturedPayment.id : (orderData.razorpayPaymentId || null)
+                    };
+                }
+
+                default:
+                    throw new HttpsError("invalid-argument", `Unsupported action '${action}'.`);
+            }
+        } catch (err) {
+            console.error(`razorpayAdmin error [${action}]:`, err);
+            if (err instanceof HttpsError) throw err;
+            throw new HttpsError(
+                "internal",
+                (err.error && err.error.description) || err.message || "Razorpay API request failed."
+            );
+        }
+    }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 4. REST API Endpoints: /api/payments/...
 // ─────────────────────────────────────────────────────────────────────────────
 exports.api = onRequest(
