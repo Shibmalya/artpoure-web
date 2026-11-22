@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="admin.css?v=20261122_waitlist_hub">
+    <link rel="stylesheet" href="admin.css?v=20261123_dashboard_hub">
 </head>
 <body>
     <!-- AUTH GATE: Sign In Modal -->
@@ -71,7 +71,11 @@
 
         <!-- Navigation Tabs -->
         <nav class="admin-nav-tabs">
-            <button class="nav-tab-btn active" data-tab="products">
+            <button class="nav-tab-btn active" data-tab="dashboard">
+                <span class="tab-icon">◈</span>
+                <span>Dashboard</span>
+            </button>
+            <button class="nav-tab-btn" data-tab="products">
                 <span class="tab-icon">✦</span>
                 <span>Products (<span id="productsCountBadge">0</span>)</span>
             </button>
@@ -97,9 +101,152 @@
         <main class="admin-content-container">
 
             <!-- ========================================================= -->
+            <!-- TAB 0: DASHBOARD (Executive Overview & Intelligence) -->
+            <!-- ========================================================= -->
+            <section id="tab-dashboard" class="admin-tab-section active">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Atelier Executive Dashboard</h2>
+                        <p class="section-subtitle">Real-time business telemetry, revenue metrics, order velocity & live audience health.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <span class="status-badge live-telemetry-badge">
+                            <span class="live-pulse-dot"></span>
+                            <span>Live Telemetry</span>
+                        </span>
+                        <button id="refreshDashboardBtn" class="btn-secondary-action btn-sm">
+                            <span id="refreshDashboardIcon">↻</span>
+                            <span>Refresh Stats</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stock Conflict Action Required Red Alert Banner -->
+                <div id="dashboardConflictBanner" class="dashboard-alert-banner" style="display: none;">
+                    <div class="dash-alert-icon">⚠️</div>
+                    <div class="dash-alert-content">
+                        <h4>Immediate Action Required: Inventory Conflict Detected</h4>
+                        <p id="dashboardConflictText">One or more orders require an immediate admin-issued refund because stock was depleted by a concurrent checkout.</p>
+                    </div>
+                    <button id="dashboardConflictActionBtn" class="btn-primary-action btn-sm">View Conflicted Orders</button>
+                </div>
+
+                <!-- Section 1: Revenue & Financial Velocity -->
+                <div class="dashboard-section-block">
+                    <h3 class="dashboard-block-title">✦ Revenue & Financial Velocity</h3>
+                    <div class="razorpay-kpi-grid">
+                        <div class="razorpay-kpi-card">
+                            <span class="rzp-kpi-label">Today's Revenue</span>
+                            <div class="rzp-kpi-value" id="dashTodayRevenue">₹0</div>
+                            <span class="rzp-kpi-hint">Net paid & partial COD today</span>
+                        </div>
+                        <div class="razorpay-kpi-card">
+                            <span class="rzp-kpi-label">Last 30 Days</span>
+                            <div class="rzp-kpi-value" id="dash30DaysRevenue">₹0</div>
+                            <span class="rzp-kpi-hint">Rolling monthly net revenue</span>
+                        </div>
+                        <div class="razorpay-kpi-card">
+                            <span class="rzp-kpi-label">All-Time Net Revenue</span>
+                            <div class="rzp-kpi-value" id="dashAllTimeRevenue">₹0</div>
+                            <span class="rzp-kpi-hint">Gross collections minus refunds</span>
+                        </div>
+                        <div class="razorpay-kpi-card">
+                            <span class="rzp-kpi-label">Average Order Value</span>
+                            <div class="rzp-kpi-value" id="dashAov">₹0</div>
+                            <span class="rzp-kpi-hint">Per confirmed client purchase</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Audience & Real-Time Activity -->
+                <div class="dashboard-section-block">
+                    <h3 class="dashboard-block-title">✦ Audience & Real-Time Activity</h3>
+                    <div class="dashboard-audience-grid">
+                        <div class="dashboard-metric-card">
+                            <div class="dash-card-icon-wrap" style="color: #25D366;">
+                                <span class="live-pulse-dot" style="width: 10px; height: 10px;"></span>
+                            </div>
+                            <div class="dash-metric-number" id="dashLiveViewers">0</div>
+                            <div class="dash-metric-label">Live Viewers Now</div>
+                            <div class="dash-metric-sub">Active on App & Web in last 2m</div>
+                        </div>
+                        <div class="dashboard-metric-card">
+                            <div class="dash-card-icon-wrap">👥</div>
+                            <div class="dash-metric-number" id="dashRegisteredUsers">0</div>
+                            <div class="dash-metric-label">Registered Clients</div>
+                            <div class="dash-metric-sub"><span id="dashGuestUsers">0</span> guest accounts</div>
+                        </div>
+                        <div class="dashboard-metric-card clickable-dash-card" id="dashCardConsultations" title="Click to view Consultations">
+                            <div class="dash-card-icon-wrap" style="color: var(--gold);">❦</div>
+                            <div class="dash-metric-number" id="dashPendingAppointments">0</div>
+                            <div class="dash-metric-label">Pending Appointments</div>
+                            <div class="dash-metric-sub">Bespoke atelier consultations ↗</div>
+                        </div>
+                        <div class="dashboard-metric-card clickable-dash-card" id="dashCardWaitlist" title="Click to view Waitlist">
+                            <div class="dash-card-icon-wrap" style="color: var(--gold);">⏳</div>
+                            <div class="dash-metric-number" id="dashWaitlistLeads">0</div>
+                            <div class="dash-metric-label">Waitlist Leads</div>
+                            <div class="dash-metric-sub">Priority alerts to message ↗</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Orders Fulfillment Breakdown -->
+                <div class="dashboard-section-block">
+                    <h3 class="dashboard-block-title">✦ Orders & Fulfillment Status</h3>
+                    <div class="dashboard-fulfillment-strip">
+                        <div class="fulfillment-pill-box pending-dispatch">
+                            <div class="fulfill-count" id="dashPendingDispatchCount">0</div>
+                            <div class="fulfill-title">Pending Dispatch</div>
+                            <div class="fulfill-sub">Confirmed & Packed weaves</div>
+                        </div>
+                        <div class="fulfillment-pill-box shipped">
+                            <div class="fulfill-count" id="dashShippedCount">0</div>
+                            <div class="fulfill-title">Shipped & In Transit</div>
+                            <div class="fulfill-sub">Out with express courier</div>
+                        </div>
+                        <div class="fulfillment-pill-box delivered">
+                            <div class="fulfill-count" id="dashDeliveredCount">0</div>
+                            <div class="fulfill-title">Delivered</div>
+                            <div class="fulfill-sub">Fulfilled heirloom orders</div>
+                        </div>
+                        <div class="fulfillment-pill-box cancelled">
+                            <div class="fulfill-count" id="dashCancelledCount">0</div>
+                            <div class="fulfill-title">Cancelled / Refunded</div>
+                            <div class="fulfill-sub">Disbursed or cancelled orders</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Inventory Health & Low-Stock Watchlist -->
+                <div class="dashboard-section-block">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                        <h3 class="dashboard-block-title" style="margin-bottom: 0;">✦ Inventory Health & Low-Stock Watchlist</h3>
+                        <div class="inventory-quick-stats">
+                            <span>Total Silhouettes: <strong id="dashTotalProducts">0</strong></span>
+                            <span>•</span>
+                            <span>Total In Stock: <strong id="dashTotalUnits">0</strong> units</span>
+                            <span>•</span>
+                            <span>Out of Stock: <strong id="dashOutOfStockCount" style="color: var(--status-red);">0</strong></span>
+                        </div>
+                    </div>
+
+                    <!-- Low Stock List -->
+                    <div id="dashLowStockEmpty" class="empty-state-card" style="display: none; padding: 30px 20px;">
+                        <span class="empty-icon">✓</span>
+                        <h3>All Catalog Inventory Healthy</h3>
+                        <p>No masterweaves or silhouettes currently under low-stock threshold.</p>
+                    </div>
+                    <div id="dashLowStockList" class="dashboard-low-stock-grid">
+                        <!-- Populated dynamically via JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================= -->
             <!-- TAB 1: PRODUCTS (Catalog Manager) -->
             <!-- ========================================================= -->
-            <section id="tab-products" class="admin-tab-section active">
+            <section id="tab-products" class="admin-tab-section">
                 <div class="section-action-header">
                     <div class="section-title-wrap">
                         <h2 class="section-title">Catalog Manager</h2>
@@ -700,6 +847,6 @@
     </div>
 
     <!-- Modular Admin Script -->
-    <script type="module" src="admin.js?v=20261122_waitlist_hub"></script>
+    <script type="module" src="admin.js?v=20261123_dashboard_hub"></script>
 </body>
 </html>

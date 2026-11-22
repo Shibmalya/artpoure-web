@@ -46,7 +46,7 @@ const state = {
     products: [],
     orders: [],
     appointments: [],
-    currentTab: 'products',
+    currentTab: 'dashboard',
     editingProductId: null,
     productFilterCategory: 'ALL',
     productSearchQuery: '',
@@ -70,7 +70,13 @@ const state = {
     waitlistItems: [],
     waitlistFilterStatus: 'ALL',
     waitlistSearchQuery: '',
-    waitlistUnsubscribe: null
+    waitlistUnsubscribe: null,
+    firebaseStats: {
+        totalUsers: 0,
+        registeredUsers: 0,
+        guestUsers: 0,
+        liveViewersNow: 0
+    }
 };
 
 // DOM Elements
@@ -92,6 +98,33 @@ const el = {
     ordersCountBadge: document.getElementById('ordersCountBadge'),
     consultationsCountBadge: document.getElementById('consultationsCountBadge'),
     waitlistCountBadge: document.getElementById('waitlistCountBadge'),
+
+    // Dashboard Tab
+    refreshDashboardBtn: document.getElementById('refreshDashboardBtn'),
+    refreshDashboardIcon: document.getElementById('refreshDashboardIcon'),
+    dashTodayRevenue: document.getElementById('dashTodayRevenue'),
+    dash30DaysRevenue: document.getElementById('dash30DaysRevenue'),
+    dashAllTimeRevenue: document.getElementById('dashAllTimeRevenue'),
+    dashAov: document.getElementById('dashAov'),
+    dashLiveViewers: document.getElementById('dashLiveViewers'),
+    dashRegisteredUsers: document.getElementById('dashRegisteredUsers'),
+    dashGuestUsers: document.getElementById('dashGuestUsers'),
+    dashPendingAppointments: document.getElementById('dashPendingAppointments'),
+    dashWaitlistLeads: document.getElementById('dashWaitlistLeads'),
+    dashCardConsultations: document.getElementById('dashCardConsultations'),
+    dashCardWaitlist: document.getElementById('dashCardWaitlist'),
+    dashPendingDispatchCount: document.getElementById('dashPendingDispatchCount'),
+    dashShippedCount: document.getElementById('dashShippedCount'),
+    dashDeliveredCount: document.getElementById('dashDeliveredCount'),
+    dashCancelledCount: document.getElementById('dashCancelledCount'),
+    dashboardConflictBanner: document.getElementById('dashboardConflictBanner'),
+    dashboardConflictText: document.getElementById('dashboardConflictText'),
+    dashboardConflictActionBtn: document.getElementById('dashboardConflictActionBtn'),
+    dashTotalProducts: document.getElementById('dashTotalProducts'),
+    dashTotalUnits: document.getElementById('dashTotalUnits'),
+    dashOutOfStockCount: document.getElementById('dashOutOfStockCount'),
+    dashLowStockEmpty: document.getElementById('dashLowStockEmpty'),
+    dashLowStockList: document.getElementById('dashLowStockList'),
 
     // Products Tab
     toggleProductFormBtn: document.getElementById('toggleProductFormBtn'),
@@ -343,7 +376,9 @@ function switchTab(tabName) {
     el.tabSections.forEach(sec => {
         sec.classList.toggle('active', sec.id === `tab-${tabName}`);
     });
-    if (tabName === 'razorpay' && !state.razorpayLoaded) {
+    if (tabName === 'dashboard') {
+        updateDashboardOverview();
+    } else if (tabName === 'razorpay' && !state.razorpayLoaded) {
         fetchRazorpayHubData();
     }
 }
@@ -356,8 +391,203 @@ async function loadAllAdminData() {
     await Promise.all([
         fetchProducts(),
         fetchOrders(),
-        fetchConsultations()
+        fetchConsultations(),
+        fetchFirebaseStats()
     ]);
+    updateDashboardOverview();
+}
+
+// =============================================================================
+// TAB 0: DASHBOARD (Live Executive Telemetry & Overview)
+// =============================================================================
+
+async function fetchFirebaseStats() {
+    try {
+        const getStatsCallable = httpsCallable(functions, 'getAdminFirebaseStats');
+        const res = await getStatsCallable();
+        if (res.data && res.data.success) {
+            state.firebaseStats = {
+                totalUsers: Number(res.data.totalUsers || 0),
+                registeredUsers: Number(res.data.registeredUsers || 0),
+                guestUsers: Number(res.data.guestUsers || 0),
+                liveViewersNow: Number(res.data.liveViewersNow || 0)
+            };
+        }
+    } catch (err) {
+        console.warn("Could not fetch admin firebase stats:", err);
+    }
+}
+
+function updateDashboardOverview() {
+    if (!el.dashTodayRevenue) return;
+
+    const now = new Date();
+    const thirtyDaysAgoMs = now.getTime() - (30 * 24 * 60 * 60 * 1000);
+
+    let todayRev = 0;
+    let thirtyDaysRev = 0;
+    let allTimeRev = 0;
+    let payingOrdersCount = 0;
+
+    let pendingDispatchCount = 0;
+    let shippedCount = 0;
+    let deliveredCount = 0;
+    let cancelledCount = 0;
+    const conflictedOrders = [];
+
+    (state.orders || []).forEach(ord => {
+        const stats = getOrderRefundStats(ord);
+        const netOrderInr = Math.max(0, stats.paidAmountInr - stats.alreadyRefundedInr);
+
+        const orderTimeMs = ord.createdAt?.seconds
+            ? ord.createdAt.seconds * 1000
+            : (ord.createdAt ? new Date(ord.createdAt).getTime() : 0);
+        const orderDate = new Date(orderTimeMs);
+
+        // Revenue calculations
+        if (stats.paidAmountInr > 0 && !stats.isFullyRefunded) {
+            payingOrdersCount++;
+        }
+        allTimeRev += netOrderInr;
+
+        if (orderDate.getFullYear() === now.getFullYear() &&
+            orderDate.getMonth() === now.getMonth() &&
+            orderDate.getDate() === now.getDate()) {
+            todayRev += netOrderInr;
+        }
+
+        if (orderTimeMs >= thirtyDaysAgoMs) {
+            thirtyDaysRev += netOrderInr;
+        }
+
+        // Fulfillment status counts
+        const status = (ord.status || 'CONFIRMED').toUpperCase();
+        const payStatus = (ord.paymentStatus || '').toUpperCase();
+
+        if (status === 'CONFLICT_REFUND_REQUIRED' || ord.stockConflict === true || ord.conflictRefundRequired === true) {
+            conflictedOrders.push(ord);
+        }
+
+        if (status === 'CANCELLED' || payStatus === 'REFUNDED') {
+            cancelledCount++;
+        } else if (status === 'DELIVERED') {
+            deliveredCount++;
+        } else if (status === 'SHIPPED') {
+            shippedCount++;
+        } else {
+            // CONFIRMED, PACKED, PROCESSING, PENDING
+            pendingDispatchCount++;
+        }
+    });
+
+    const aov = payingOrdersCount > 0 ? Math.round(allTimeRev / payingOrdersCount) : 0;
+
+    // Render Revenue KPIs
+    if (el.dashTodayRevenue) el.dashTodayRevenue.textContent = `₹${todayRev.toLocaleString('en-IN')}`;
+    if (el.dash30DaysRevenue) el.dash30DaysRevenue.textContent = `₹${thirtyDaysRev.toLocaleString('en-IN')}`;
+    if (el.dashAllTimeRevenue) el.dashAllTimeRevenue.textContent = `₹${allTimeRev.toLocaleString('en-IN')}`;
+    if (el.dashAov) el.dashAov.textContent = `₹${aov.toLocaleString('en-IN')}`;
+
+    // Render Stock Conflict Alert Banner
+    if (el.dashboardConflictBanner) {
+        if (conflictedOrders.length > 0) {
+            el.dashboardConflictBanner.style.display = 'flex';
+            if (el.dashboardConflictText) {
+                el.dashboardConflictText.textContent = `${conflictedOrders.length} order${conflictedOrders.length === 1 ? '' : 's'} require${conflictedOrders.length === 1 ? 's' : ''} an immediate refund due to inventory stock depletion during checkout.`;
+            }
+        } else {
+            el.dashboardConflictBanner.style.display = 'none';
+        }
+    }
+
+    // Render Audience & Telemetry
+    if (el.dashLiveViewers) el.dashLiveViewers.textContent = state.firebaseStats?.liveViewersNow ?? 0;
+    if (el.dashRegisteredUsers) el.dashRegisteredUsers.textContent = state.firebaseStats?.registeredUsers ?? 0;
+    if (el.dashGuestUsers) el.dashGuestUsers.textContent = state.firebaseStats?.guestUsers ?? 0;
+
+    const pendingAppointments = (state.appointments || []).filter(a => (a.status || 'PENDING').toUpperCase() === 'PENDING').length;
+    if (el.dashPendingAppointments) el.dashPendingAppointments.textContent = pendingAppointments;
+
+    const unnotifiedWaitlist = (state.waitlistItems || []).filter(w => w.notified !== true).length;
+    if (el.dashWaitlistLeads) el.dashWaitlistLeads.textContent = unnotifiedWaitlist;
+
+    // Render Fulfillment Breakdown
+    if (el.dashPendingDispatchCount) el.dashPendingDispatchCount.textContent = pendingDispatchCount;
+    if (el.dashShippedCount) el.dashShippedCount.textContent = shippedCount;
+    if (el.dashDeliveredCount) el.dashDeliveredCount.textContent = deliveredCount;
+    if (el.dashCancelledCount) el.dashCancelledCount.textContent = cancelledCount;
+
+    // Render Inventory Health & Low Stock Watchlist
+    const totalSilhouettes = (state.products || []).length;
+    let totalUnits = 0;
+    let outOfStockCount = 0;
+    const lowStockItems = [];
+
+    (state.products || []).forEach(prod => {
+        const variants = prod.variants || [];
+        const prodStock = variants.reduce((sum, v) => sum + (typeof v.stockCount === 'number' ? v.stockCount : (v.inStock === false ? 0 : 1)), 0);
+        totalUnits += prodStock;
+
+        if (prodStock === 0) {
+            outOfStockCount++;
+        }
+
+        if (prodStock <= 2) {
+            lowStockItems.push({
+                product: prod,
+                totalStock: prodStock
+            });
+        }
+    });
+
+    if (el.dashTotalProducts) el.dashTotalProducts.textContent = totalSilhouettes;
+    if (el.dashTotalUnits) el.dashTotalUnits.textContent = totalUnits.toLocaleString('en-IN');
+    if (el.dashOutOfStockCount) el.dashOutOfStockCount.textContent = outOfStockCount;
+
+    // Render Low Stock Cards
+    lowStockItems.sort((a, b) => a.totalStock - b.totalStock);
+
+    if (el.dashLowStockEmpty && el.dashLowStockList) {
+        if (lowStockItems.length === 0) {
+            el.dashLowStockEmpty.style.display = 'block';
+            el.dashLowStockList.innerHTML = '';
+        } else {
+            el.dashLowStockEmpty.style.display = 'none';
+            el.dashLowStockList.innerHTML = lowStockItems.map(item => {
+                const p = item.product;
+                const firstVar = (p.variants && p.variants[0]) || {};
+                const thumb = p.imageUrl || firstVar.imageUrl || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80';
+                const stock = item.totalStock;
+                const formattedPrice = Number(p.priceInr || 0).toLocaleString('en-IN');
+                const badgeClass = stock === 0 ? 'dash-stock-badge-out' : 'dash-stock-badge-low';
+                const badgeLabel = stock === 0 ? 'Out of Stock' : (stock === 1 ? '1 Unit Left' : '2 Units Left');
+
+                return `
+                    <div class="dash-low-stock-card" data-product-id="${p.id}">
+                        <img src="${thumb}" alt="${p.fullName || p.id}" class="dash-low-stock-thumb" loading="lazy" onerror="this.src='https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=600&q=80'">
+                        <div class="dash-low-stock-info">
+                            <h5 class="dash-low-stock-title" title="${p.fullName || p.id}">${p.fullName || p.id}</h5>
+                            <div class="dash-low-stock-meta">
+                                <span>₹${formattedPrice}</span>
+                                <span>•</span>
+                                <span class="${badgeClass}">${badgeLabel}</span>
+                            </div>
+                        </div>
+                        <button class="btn-card-action edit-low-stock-btn" data-id="${p.id}" style="padding: 6px 12px; font-size: 11px; flex: initial;">✎ Edit</button>
+                    </div>
+                `;
+            }).join('');
+
+            el.dashLowStockList.querySelectorAll('.edit-low-stock-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.id;
+                    switchTab('products');
+                    editProduct(id);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            });
+        }
+    }
 }
 
 // =============================================================================
@@ -378,6 +608,7 @@ async function fetchProducts() {
         state.products = items;
         el.productsCountBadge.textContent = items.length;
         renderProductsGrid();
+        updateDashboardOverview();
     } catch (err) {
         console.error("Error fetching products:", err);
         showToast(`Could not load products: ${err.message}`, "error");
@@ -1075,6 +1306,7 @@ async function fetchOrders() {
         state.orders = items;
         el.ordersCountBadge.textContent = items.length;
         renderOrdersList();
+        updateDashboardOverview();
     } catch (err) {
         console.error("Error fetching orders:", err);
         showToast(`Could not load orders: ${err.message}`, "error");
@@ -1619,6 +1851,7 @@ async function fetchConsultations() {
         state.appointments = items;
         el.consultationsCountBadge.textContent = items.length;
         renderConsultationsList();
+        updateDashboardOverview();
     } catch (err) {
         console.error("Error fetching consultations:", err);
         showToast(`Could not load consultations: ${err.message}`, "error");
@@ -2464,6 +2697,7 @@ function subscribeWaitlistRealtime() {
             if (el.waitlistFilterWaitingCount) el.waitlistFilterWaitingCount.textContent = unnotifiedCount;
 
             renderWaitlistList();
+            updateDashboardOverview();
             if (el.waitlistLoadingSpinner) el.waitlistLoadingSpinner.style.display = 'none';
         }, (err) => {
             console.error("Waitlist real-time subscription error:", err);
@@ -2664,6 +2898,48 @@ if (el.waitlistStatusFilters) {
             state.waitlistFilterStatus = pill.dataset.filter;
             renderWaitlistList();
         });
+    });
+}
+
+// Dashboard Listeners
+if (el.refreshDashboardBtn) {
+    el.refreshDashboardBtn.addEventListener('click', async () => {
+        if (el.refreshDashboardIcon) el.refreshDashboardIcon.style.animation = 'spin 0.8s linear infinite';
+        showToast("Refreshing live business telemetry...", "info");
+        try {
+            await Promise.all([
+                fetchProducts(),
+                fetchOrders(),
+                fetchConsultations(),
+                fetchFirebaseStats()
+            ]);
+            updateDashboardOverview();
+            showToast("Dashboard telemetry up to date", "success");
+        } catch (err) {
+            console.error("Dashboard refresh error:", err);
+            showToast("Failed to refresh some metrics", "error");
+        } finally {
+            if (el.refreshDashboardIcon) el.refreshDashboardIcon.style.animation = '';
+        }
+    });
+}
+
+if (el.dashCardConsultations) {
+    el.dashCardConsultations.addEventListener('click', () => {
+        switchTab('consultations');
+    });
+}
+
+if (el.dashCardWaitlist) {
+    el.dashCardWaitlist.addEventListener('click', () => {
+        switchTab('waitlist');
+    });
+}
+
+if (el.dashboardConflictActionBtn) {
+    el.dashboardConflictActionBtn.addEventListener('click', () => {
+        switchTab('orders');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 }
 

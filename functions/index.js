@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { initializeApp, getApps } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const Razorpay = require("razorpay");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
@@ -2135,5 +2136,77 @@ exports.api = onRequest(
         }
 
         return res.status(404).json({ error: "Endpoint not found" });
+    }
+);
+
+/**
+ * Live Admin Firebase Stats Endpoint
+ * Provides aggregated user counts and real-time active viewers.
+ */
+exports.getAdminFirebaseStats = onCall(
+    { cors: true },
+    async (request) => {
+        // Strict Admin Auth Check (identical to issueOrderRefund / razorpayAdmin)
+        if (
+            !request.auth ||
+            request.auth.token.email_verified !== true ||
+            !request.auth.token.email ||
+            !ADMIN_EMAILS.includes(request.auth.token.email.toLowerCase())
+        ) {
+            throw new HttpsError("permission-denied", "Admin privileges required.");
+        }
+
+        let totalUsers = 0;
+        let registeredUsers = 0;
+        let guestUsers = 0;
+
+        try {
+            const listResult = await getAuth().listUsers(1000);
+            listResult.users.forEach((u) => {
+                const isRegistered = Boolean(u.email || u.phoneNumber || (u.providerData && u.providerData.length > 0));
+                if (isRegistered) {
+                    registeredUsers++;
+                } else {
+                    guestUsers++;
+                }
+            });
+            totalUsers = listResult.users.length;
+        } catch (authErr) {
+            console.error("Error listing users for stats:", authErr);
+        }
+
+        let liveViewersNow = 0;
+        try {
+            const twoMinutesAgoMs = Date.now() - 2 * 60 * 1000;
+            const viewersSnap = await db.collectionGroup("viewers").get();
+            viewersSnap.docs.forEach((doc) => {
+                const d = doc.data() || {};
+                let activeMs = 0;
+                if (d.lastActive && typeof d.lastActive.toMillis === "function") {
+                    activeMs = d.lastActive.toMillis();
+                } else if (d.lastActive && typeof d.lastActive.toDate === "function") {
+                    activeMs = d.lastActive.toDate().getTime();
+                } else if (typeof d.lastActive === "number") {
+                    activeMs = d.lastActive;
+                } else if (d.lastActive) {
+                    activeMs = new Date(d.lastActive).getTime();
+                } else if (d.updatedAt && typeof d.updatedAt.toMillis === "function") {
+                    activeMs = d.updatedAt.toMillis();
+                }
+                if (activeMs >= twoMinutesAgoMs) {
+                    liveViewersNow++;
+                }
+            });
+        } catch (vErr) {
+            console.warn("Could not query viewers collectionGroup:", vErr.message);
+            liveViewersNow = 0;
+        }
+
+        return {
+            totalUsers,
+            registeredUsers,
+            guestUsers,
+            liveViewersNow
+        };
     }
 );
