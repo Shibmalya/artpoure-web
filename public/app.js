@@ -1347,7 +1347,10 @@ function showHeroIndex(index) {
     const heroPrice = document.getElementById('heroPrice');
     const heroPageCounter = document.getElementById('heroPageCounter');
 
-    if (heroCard) heroCard.style.backgroundColor = variant.canvasHex || '#4A0E17';
+    if (heroCard) {
+        heroCard.style.backgroundColor = variant.canvasHex || '#4A0E17';
+        heroCard.style.overflow = 'hidden';
+    }
     if (heroTitle) heroTitle.textContent = product.editorialTitle || '';
     if (heroSub) heroSub.textContent = product.details || product.fullName || '';
     if (heroPrice) heroPrice.textContent = `₹${(product.priceInr || 0).toLocaleString('en-IN')}`;
@@ -1359,6 +1362,9 @@ function showHeroIndex(index) {
     if (heroModelImg) {
         heroModelImg.src = variant.imageUrl || product.imageUrl || '';
         heroModelImg.alt = product.fullName || '';
+        heroModelImg.style.objectFit = 'cover';
+        heroModelImg.style.objectPosition = 'top center';
+        heroModelImg.style.margin = '0';
     }
 
     // Update indicator dots
