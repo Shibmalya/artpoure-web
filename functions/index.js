@@ -72,10 +72,7 @@ async function getAuthoritativeProduct(productId) {
  * and high-entropy cryptographic randomness (e.g., ART-2026-L5K8J9-8F2B).
  */
 function generateCollisionFreeOrderId() {
-    const currentYear = new Date().getFullYear();
-    const timestamp = Date.now().toString(36).toUpperCase();
-    const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
-    return `ART-${currentYear}-${timestamp}-${randomSuffix}`;
+    return `ART-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
 }
 
 /**
@@ -1081,26 +1078,27 @@ exports.createCodOrder = onCall(
             const targetColorName = (item.variant || item.colorName || "").toString().trim().toLowerCase();
             const rawCategory = (product.category || "").toString().trim().toUpperCase();
 
-            const productRef = db.collection("products").doc(pid);
-            const pSnap = await productRef.get();
-            if (pSnap.exists) {
-                const pData = pSnap.data() || {};
-                const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
-                const now = Date.now();
+            // Check reservation and stock for CUSTOM pieces
+            if (rawCategory === "CUSTOM") {
+                const productRef = db.collection("products").doc(pid);
+                await db.runTransaction(async (tx) => {
+                    const pSnap = await tx.get(productRef);
+                    if (!pSnap.exists) return;
+                    const pData = pSnap.data() || {};
+                    const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
+                    const now = Date.now();
 
-                let matchedVariant = null;
-                if (targetVariantId) {
-                    matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
-                }
-                if (!matchedVariant && targetColorName && targetColorName !== "standard") {
-                    matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
-                }
-                if (!matchedVariant && pVariants.length > 0) {
-                    matchedVariant = pVariants[0];
-                }
+                    let matchedVariant = null;
+                    if (targetVariantId) {
+                        matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
+                    }
+                    if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                        matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                    }
+                    if (!matchedVariant && pVariants.length > 0) {
+                        matchedVariant = pVariants[0];
+                    }
 
-                // Check reservation and stock for CUSTOM pieces
-                if (rawCategory === "CUSTOM") {
                     if ((matchedVariant && matchedVariant.inStock === false) || pData.inStock === false) {
                         throw new HttpsError(
                             "failed-precondition",
@@ -1134,41 +1132,58 @@ exports.createCodOrder = onCall(
                             "This 1-of-1 ArtClusive piece is currently in another client's checkout. Please check back in 10 minutes."
                         );
                     }
-                } else {
-                    // For non-CUSTOM catalog items, verify available stock and capacity
-                    const stockCount = matchedVariant
-                        ? (typeof matchedVariant.stockCount === "number" ? matchedVariant.stockCount : (matchedVariant.inStock === false ? 0 : 1))
+                });
+            } else {
+                // For non-CUSTOM catalog items, verify available stock and capacity inside transaction
+                const productRef = db.collection("products").doc(pid);
+                await db.runTransaction(async (tx) => {
+                    const pSnap = await tx.get(productRef);
+                    if (!pSnap.exists) return;
+                    const pData = pSnap.data() || {};
+                    const pVariants = Array.isArray(pData.variants) ? pData.variants : [];
+                    const now = Date.now();
+
+                    let matchedVariant = null;
+                    if (targetVariantId) {
+                        matchedVariant = pVariants.find(v => v && v.id === targetVariantId);
+                    }
+                    if (!matchedVariant && targetColorName && targetColorName !== "standard") {
+                        matchedVariant = pVariants.find(v => v && (v.colorName || "").toString().trim().toLowerCase() === targetColorName);
+                    }
+                    if (!matchedVariant && pVariants.length > 0) {
+                        matchedVariant = pVariants[0];
+                    }
+
+                    const selectedVariant = matchedVariant;
+                    const stockCount = selectedVariant
+                        ? (typeof selectedVariant.stockCount === "number" ? selectedVariant.stockCount : (selectedVariant.inStock === false ? 0 : 1))
                         : (typeof pData.stockCount === "number" ? pData.stockCount : (pData.inStock === false ? 0 : 1));
 
-                    if (stockCount <= 0 || (matchedVariant && matchedVariant.inStock === false) || pData.inStock === false) {
+                    if (stockCount <= 0 || (selectedVariant && selectedVariant.inStock === false) || pData.inStock === false) {
                         throw new HttpsError(
                             "failed-precondition",
                             `"${product.title}" is currently out of stock.`
                         );
                     }
 
-                    const reservations = matchedVariant
-                        ? (Array.isArray(matchedVariant.reservations) ? matchedVariant.reservations : [])
-                        : (Array.isArray(pData.reservations) ? pData.reservations : []);
-
-                    const activeReservedQty = reservations
-                        .filter(r => r && r.expiresAt > now && r.userId !== uid)
-                        .reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
-
+                    const currentReservations = (selectedVariant ? selectedVariant.reservations : pData.reservations) || [];
+                    const activeReservations = currentReservations.filter(r => r && r.expiresAt > now && r.userId !== uid);
+                    const activeReservedQty = activeReservations.reduce((sum, r) => sum + (Number(r.quantity) || 1), 0);
                     const availableCapacity = stockCount - activeReservedQty;
+
                     if (availableCapacity <= 0) {
                         throw new HttpsError(
                             "failed-precondition",
                             `All available units of "${product.title}" are currently in checkout. Please try again in a few minutes.`
                         );
                     }
-                    if (qty > availableCapacity) {
+                    if (availableCapacity < qty) {
                         throw new HttpsError(
                             "failed-precondition",
                             `Only ${availableCapacity} unit(s) available for "${product.title}". Please adjust your cart.`
                         );
                     }
-                }
+                });
             }
 
             const itemTotal = product.priceInr * qty;
