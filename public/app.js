@@ -729,11 +729,16 @@ function renderCuratedPicks() {
 // --- WAITLIST MODAL & SUBMISSION (Matching Android StoreViewModel) ---
 export function openWaitlistModal(categoryName = '') {
     const overlay = document.getElementById('waitlistModalOverlay');
+    const formView = document.getElementById('waitlistFormView');
+    const successView = document.getElementById('waitlistSuccessView');
     const title = document.getElementById('waitlistTitle');
     const desc = document.getElementById('waitlistDesc');
     const input = document.getElementById('waitlistContact');
     const err = document.getElementById('waitlistContactError');
     if (!overlay) return;
+
+    if (formView) formView.style.display = 'block';
+    if (successView) successView.style.display = 'none';
 
     const formattedCat = (categoryName || state.selectedSubCategory || state.selectedCategory || 'this collection').replace('-', ' ').toUpperCase();
     if (title) title.textContent = `${formattedCat} WAITLIST`;
@@ -745,26 +750,40 @@ export function openWaitlistModal(categoryName = '') {
 
     overlay.style.display = 'flex';
     overlay.dataset.targetCategory = categoryName || state.selectedSubCategory || state.selectedCategory;
+    overlay.dataset.formattedCat = formattedCat;
 }
 window.openWaitlistModal = openWaitlistModal;
 
 export function closeWaitlistModal() {
     const overlay = document.getElementById('waitlistModalOverlay');
+    const formView = document.getElementById('waitlistFormView');
+    const successView = document.getElementById('waitlistSuccessView');
+    const err = document.getElementById('waitlistContactError');
     if (overlay) overlay.style.display = 'none';
+    if (formView) formView.style.display = 'block';
+    if (successView) successView.style.display = 'none';
+    if (err) err.style.display = 'none';
 }
 window.closeWaitlistModal = closeWaitlistModal;
 
 export async function submitWaitlist() {
     const overlay = document.getElementById('waitlistModalOverlay');
+    const formView = document.getElementById('waitlistFormView');
+    const successView = document.getElementById('waitlistSuccessView');
+    const successMsg = document.getElementById('waitlistSuccessMessage');
     const input = document.getElementById('waitlistContact');
     const err = document.getElementById('waitlistContactError');
     const submitBtn = document.getElementById('submitWaitlistBtn');
     if (!input || !submitBtn) return;
 
     const contact = input.value.trim().slice(0, 120);
-    if (!contact || contact.length < 6) {
+    const digitsOnly = contact.replace(/\D/g, '');
+    const isPhoneValid = digitsOnly.length === 10;
+    const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+
+    if (!isPhoneValid && !isEmailValid) {
         if (err) {
-            err.textContent = "Please enter a valid WhatsApp number or email address (at least 6 characters).";
+            err.textContent = "Please enter a valid 10-digit mobile number or email address.";
             err.style.display = 'block';
         }
         return;
@@ -778,6 +797,7 @@ export async function submitWaitlist() {
         await ensureAuthSession();
         const rawCategory = overlay?.dataset.targetCategory || state.selectedSubCategory || state.selectedCategory || 'GENERAL';
         const cleanCategory = String(rawCategory).trim().slice(0, 50) || 'GENERAL';
+        const formattedCat = overlay?.dataset.formattedCat || cleanCategory;
         const docData = {
             category: cleanCategory,
             contact: contact,
@@ -786,11 +806,20 @@ export async function submitWaitlist() {
         };
 
         await addDoc(collection(db, "waitlist"), docData);
-        showToast("✦ You're on the waitlist! We'll notify you on arrival.", "success");
-        closeWaitlistModal();
+
+        if (successMsg) {
+            successMsg.textContent = `We've reserved your priority alert for ${formattedCat}. We will notify ${contact} the moment the collection arrives.`;
+        }
+        if (formView) formView.style.display = 'none';
+        if (successView) successView.style.display = 'block';
     } catch (error) {
         console.error("Waitlist Submission Error:", error);
-        showToast(`Failed to join waitlist: ${error.message}`, "error");
+        if (err) {
+            err.textContent = `Error: ${error.message}`;
+            err.style.display = 'block';
+        } else {
+            showToast(`Failed to join waitlist: ${error.message}`, "error");
+        }
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = "NOTIFY ME";
@@ -2154,6 +2183,7 @@ function setupEventListeners() {
     document.getElementById('closeWaitlistModalBtn')?.addEventListener('click', closeWaitlistModal);
     document.getElementById('cancelWaitlistBtn')?.addEventListener('click', closeWaitlistModal);
     document.getElementById('submitWaitlistBtn')?.addEventListener('click', submitWaitlist);
+    document.getElementById('waitlistDoneBtn')?.addEventListener('click', closeWaitlistModal);
 }
 
 // --- GUEST TO PERMANENT ACCOUNT DATA CONTINUITY ---

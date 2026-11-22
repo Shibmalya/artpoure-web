@@ -1801,3 +1801,119 @@ body {
     border: 1px solid var(--status-blue);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB 5: WAITLIST (Client Priority Alerts)
+   ───────────────────────────────────────────────────────────────────────────── */
+.waitlist-admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 20px;
+}
+
+.waitlist-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+    transition: border-color 0.2s ease;
+}
+
+.waitlist-card:hover {
+    border-color: var(--gold-border);
+}
+
+.waitlist-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 12px;
+}
+
+.waitlist-category-badge {
+    font-family: var(--font-heading);
+    font-size: 14px;
+    color: var(--gold);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.waitlist-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.waitlist-detail-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.waitlist-detail-value {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.waitlist-detail-value a {
+    color: var(--gold);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.waitlist-actions {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 12px;
+}
+
+.btn-outreach-whatsapp {
+    background: #25D366 !important;
+    color: #fff !important;
+    border: none !important;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-outreach-whatsapp:hover {
+    opacity: 0.9;
+}
+
+.btn-outreach-email {
+    background: #4285F4 !important;
+    color: #fff !important;
+    border: none !important;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-outreach-email:hover {
+    opacity: 0.9;
+}
+

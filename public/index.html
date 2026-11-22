@@ -988,27 +988,44 @@
     <!-- Atelier Waitlist Notify Me Modal (matching Android HomeScreen) -->
     <div class="waitlist-modal-overlay" id="waitlistModalOverlay" style="display: none;">
         <div class="waitlist-modal">
-            <div class="waitlist-header">
-                <div class="waitlist-badge">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                    <span>ATELIER WAITLIST</span>
+            <!-- Form View -->
+            <div id="waitlistFormView">
+                <div class="waitlist-header">
+                    <div class="waitlist-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        <span>ATELIER WAITLIST</span>
+                    </div>
+                    <button class="icon-btn waitlist-close-btn" id="closeWaitlistModalBtn" title="Close" type="button">✕</button>
                 </div>
-                <button class="icon-btn waitlist-close-btn" id="closeWaitlistModalBtn" title="Close" type="button">✕</button>
+                <h3 class="waitlist-title" id="waitlistTitle">WEAVE NOTIFICATION</h3>
+                <p class="waitlist-desc" id="waitlistDesc">
+                    We are currently curating handloom masterweaves for this category. Leave your contact to be notified the moment they arrive.
+                </p>
+                <div class="waitlist-form">
+                    <div class="form-group">
+                        <label for="waitlistContact">WhatsApp Number or Email *</label>
+                        <input type="text" id="waitlistContact" placeholder="e.g. 7003248681 or name@artpoure.in" required>
+                        <span class="field-error" id="waitlistContactError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;"></span>
+                    </div>
+                    <div class="waitlist-actions">
+                        <button type="button" class="waitlist-cancel-btn" id="cancelWaitlistBtn">CANCEL</button>
+                        <button type="button" class="waitlist-submit-btn" id="submitWaitlistBtn">NOTIFY ME</button>
+                    </div>
+                </div>
             </div>
-            <h3 class="waitlist-title" id="waitlistTitle">WEAVE NOTIFICATION</h3>
-            <p class="waitlist-desc" id="waitlistDesc">
-                We are currently curating handloom masterweaves for this category. Leave your contact to be notified the moment they arrive.
-            </p>
-            <div class="waitlist-form">
-                <div class="form-group">
-                    <label for="waitlistContact">WhatsApp Number or Email *</label>
-                    <input type="text" id="waitlistContact" placeholder="e.g. 7003248681 or name@artpoure.in" required>
-                    <span class="field-error" id="waitlistContactError" style="display: none; color: #ff5252; font-size: 11px; margin-top: 4px;"></span>
+
+            <!-- Success Confirmation View -->
+            <div id="waitlistSuccessView" style="display: none; text-align: center;">
+                <div class="waitlist-success-badge">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
                 </div>
-                <div class="waitlist-actions">
-                    <button type="button" class="waitlist-cancel-btn" id="cancelWaitlistBtn">CANCEL</button>
-                    <button type="button" class="waitlist-submit-btn" id="submitWaitlistBtn">NOTIFY ME</button>
-                </div>
+                <h3 class="waitlist-title" style="margin-top: 8px;">YOU'RE ON THE PRIORITY LIST</h3>
+                <p class="waitlist-desc" id="waitlistSuccessMessage" style="margin-bottom: 22px; line-height: 1.6;">
+                    We've reserved your priority alert for this category. We will notify you the moment the collection arrives.
+                </p>
+                <button type="button" class="waitlist-submit-btn" id="waitlistDoneBtn" style="width: 100%;">DONE</button>
             </div>
         </div>
     </div>

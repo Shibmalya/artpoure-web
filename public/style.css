@@ -3777,6 +3777,19 @@ body.artclusive-mode .brand-title {
     box-shadow: 0 4px 12px rgba(184, 134, 11, 0.4);
 }
 
+.waitlist-success-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(184, 134, 11, 0.15);
+    border: 1px solid var(--accent-gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 8px auto 14px;
+    color: var(--accent-gold);
+}
+
 /* ==========================================================================
    LEGAL & POLICY PAGES, EDITORIAL FOOTER & PARITY PLACEMENTS
    ========================================================================== */

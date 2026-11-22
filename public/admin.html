@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="admin.css?v=20261122_razorpay_hub">
+    <link rel="stylesheet" href="admin.css?v=20261122_waitlist_hub">
 </head>
 <body>
     <!-- AUTH GATE: Sign In Modal -->
@@ -86,6 +86,10 @@
             <button class="nav-tab-btn" data-tab="razorpay">
                 <span class="tab-icon">⚡</span>
                 <span>Razorpay</span>
+            </button>
+            <button class="nav-tab-btn" data-tab="waitlist">
+                <span class="tab-icon">⏳</span>
+                <span>Waitlist (<span id="waitlistCountBadge">0</span>)</span>
             </button>
         </nav>
 
@@ -509,6 +513,51 @@
                     </div>
                 </div>
             </section>
+
+            <!-- ========================================================= -->
+            <!-- TAB 5: WAITLIST (Atelier Client Priority Alerts) -->
+            <!-- ========================================================= -->
+            <section id="tab-waitlist" class="admin-tab-section">
+                <div class="section-action-header">
+                    <div class="section-title-wrap">
+                        <h2 class="section-title">Atelier Waitlist</h2>
+                        <p class="section-subtitle">Real-time priority alerts requested by clients for curated handloom silhouettes and out-of-stock weaves.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <span id="waitlistLiveStatusPill" class="status-badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; border: 1px solid rgba(37, 211, 102, 0.3); font-size: 11px;">
+                            ● Live Real-Time
+                        </span>
+                        <button id="refreshWaitlistBtn" class="btn-secondary-action btn-sm">
+                            <span>↻ Re-sync</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="orders-controls-bar">
+                    <div class="search-input-wrap">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="waitlistSearchInput" class="search-input" placeholder="Search by category, phone, email, or user ID...">
+                    </div>
+                    <div class="filter-pills-scroll" id="waitlistStatusFilters">
+                        <button class="filter-pill active" data-filter="ALL">All</button>
+                        <button class="filter-pill" data-filter="UNNOTIFIED">Waiting (<span id="waitlistFilterWaitingCount">0</span>)</button>
+                        <button class="filter-pill" data-filter="NOTIFIED">Notified</button>
+                    </div>
+                </div>
+
+                <div id="waitlistLoadingSpinner" class="loading-state-container">
+                    <div class="luxury-spinner"></div>
+                    <p class="loading-text">Listening to Live Waitlist Feed...</p>
+                </div>
+                <div id="waitlistEmptyState" class="empty-state-card" style="display: none;">
+                    <span class="empty-icon">⏳</span>
+                    <h3>No Waitlist Signups Found</h3>
+                    <p>No client priority alerts match your current filter.</p>
+                </div>
+                <div id="waitlistList" class="waitlist-admin-grid">
+                    <!-- Waitlist cards rendered via JS -->
+                </div>
+            </section>
         </main>
     </div>
 
@@ -651,6 +700,6 @@
     </div>
 
     <!-- Modular Admin Script -->
-    <script type="module" src="admin.js?v=20261122_razorpay_hub"></script>
+    <script type="module" src="admin.js?v=20261122_waitlist_hub"></script>
 </body>
 </html>

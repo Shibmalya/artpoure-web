@@ -20,6 +20,7 @@ import {
     getDoc,
     updateDoc,
     deleteDoc,
+    onSnapshot,
     query,
     orderBy,
     serverTimestamp,
@@ -65,7 +66,11 @@ const state = {
         refunds: [],
         links: []
     },
-    razorpayLoaded: false
+    razorpayLoaded: false,
+    waitlistItems: [],
+    waitlistFilterStatus: 'ALL',
+    waitlistSearchQuery: '',
+    waitlistUnsubscribe: null
 };
 
 // DOM Elements
@@ -86,6 +91,7 @@ const el = {
     productsCountBadge: document.getElementById('productsCountBadge'),
     ordersCountBadge: document.getElementById('ordersCountBadge'),
     consultationsCountBadge: document.getElementById('consultationsCountBadge'),
+    waitlistCountBadge: document.getElementById('waitlistCountBadge'),
 
     // Products Tab
     toggleProductFormBtn: document.getElementById('toggleProductFormBtn'),
@@ -121,6 +127,15 @@ const el = {
     consultationsLoadingSpinner: document.getElementById('consultationsLoadingSpinner'),
     consultationsEmptyState: document.getElementById('consultationsEmptyState'),
     consultationsList: document.getElementById('consultationsList'),
+
+    // Waitlist Tab
+    waitlistFilterWaitingCount: document.getElementById('waitlistFilterWaitingCount'),
+    waitlistSearchInput: document.getElementById('waitlistSearchInput'),
+    waitlistStatusFilters: document.getElementById('waitlistStatusFilters'),
+    waitlistLoadingSpinner: document.getElementById('waitlistLoadingSpinner'),
+    waitlistEmptyState: document.getElementById('waitlistEmptyState'),
+    waitlistList: document.getElementById('waitlistList'),
+    refreshWaitlistBtn: document.getElementById('refreshWaitlistBtn'),
 
     // Modal & Toast
     toastContainer: document.getElementById('toastContainer'),
@@ -291,6 +306,10 @@ el.googleSignInBtn.addEventListener('click', async () => {
 
 // Sign-Out
 function handleSignOut() {
+    if (state.waitlistUnsubscribe) {
+        state.waitlistUnsubscribe();
+        state.waitlistUnsubscribe = null;
+    }
     signOut(auth).then(() => {
         state.user = null;
         showToast("Signed out successfully", "info");
@@ -333,6 +352,7 @@ function switchTab(tabName) {
 // LOAD ALL DATA
 // =============================================================================
 async function loadAllAdminData() {
+    subscribeWaitlistRealtime();
     await Promise.all([
         fetchProducts(),
         fetchOrders(),
@@ -2414,6 +2434,236 @@ if (el.copyGeneratedLinkBtn) {
             navigator.clipboard.writeText(el.generatedLinkInput.value);
             showToast('Copied link to clipboard', 'info');
         }
+    });
+}
+
+// =============================================================================
+// TAB 5: WAITLIST (Atelier Client Priority Alerts)
+// =============================================================================
+
+function subscribeWaitlistRealtime() {
+    if (state.waitlistUnsubscribe) {
+        state.waitlistUnsubscribe();
+        state.waitlistUnsubscribe = null;
+    }
+
+    if (el.waitlistLoadingSpinner) el.waitlistLoadingSpinner.style.display = 'flex';
+    if (el.waitlistEmptyState) el.waitlistEmptyState.style.display = 'none';
+
+    try {
+        const q = query(collection(db, "waitlist"), orderBy("createdAt", "desc"));
+        state.waitlistUnsubscribe = onSnapshot(q, (snapshot) => {
+            const items = [];
+            snapshot.forEach(docSnap => {
+                items.push({ id: docSnap.id, ...docSnap.data() });
+            });
+            state.waitlistItems = items;
+
+            const unnotifiedCount = items.filter(it => it.notified !== true).length;
+            if (el.waitlistCountBadge) el.waitlistCountBadge.textContent = unnotifiedCount;
+            if (el.waitlistFilterWaitingCount) el.waitlistFilterWaitingCount.textContent = unnotifiedCount;
+
+            renderWaitlistList();
+            if (el.waitlistLoadingSpinner) el.waitlistLoadingSpinner.style.display = 'none';
+        }, (err) => {
+            console.error("Waitlist real-time subscription error:", err);
+            if (el.waitlistLoadingSpinner) el.waitlistLoadingSpinner.style.display = 'none';
+            showToast(`Waitlist subscription error: ${err.message}`, "error");
+        });
+    } catch (err) {
+        console.error("Error setting up waitlist subscription:", err);
+        if (el.waitlistLoadingSpinner) el.waitlistLoadingSpinner.style.display = 'none';
+        showToast(`Waitlist setup error: ${err.message}`, "error");
+    }
+}
+
+function renderWaitlistList() {
+    if (!el.waitlistList) return;
+
+    const queryStr = (state.waitlistSearchQuery || '').toLowerCase().trim();
+    const filterStatus = state.waitlistFilterStatus || 'ALL';
+
+    const filtered = state.waitlistItems.filter(item => {
+        const isNotified = item.notified === true;
+        let matchesFilter = true;
+        if (filterStatus === 'UNNOTIFIED') matchesFilter = !isNotified;
+        if (filterStatus === 'NOTIFIED') matchesFilter = isNotified;
+
+        const cat = (item.category || '').toLowerCase();
+        const contact = (item.contact || '').toLowerCase();
+        const uid = (item.userId || '').toLowerCase();
+        const matchesSearch = !queryStr ||
+            cat.includes(queryStr) ||
+            contact.includes(queryStr) ||
+            uid.includes(queryStr);
+
+        return matchesFilter && matchesSearch;
+    });
+
+    if (filtered.length === 0) {
+        if (el.waitlistEmptyState) el.waitlistEmptyState.style.display = 'block';
+        el.waitlistList.innerHTML = '';
+        return;
+    }
+
+    if (el.waitlistEmptyState) el.waitlistEmptyState.style.display = 'none';
+    el.waitlistList.innerHTML = filtered.map(item => {
+        const itemId = item.id;
+        const isNotified = item.notified === true;
+        const category = (item.category || 'GENERAL').replace('-', ' ').toUpperCase();
+        const contact = item.contact || 'No contact provided';
+        const rawDigits = contact.replace(/\D/g, '');
+        const isPhone = rawDigits.length >= 10;
+        const phone10 = rawDigits.slice(-10);
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+
+        let createdDateStr = 'Recent';
+        if (item.createdAt) {
+            try {
+                const dateObj = typeof item.createdAt.toDate === 'function'
+                    ? item.createdAt.toDate()
+                    : new Date(item.createdAt);
+                if (!isNaN(dateObj.getTime())) {
+                    createdDateStr = dateObj.toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                }
+            } catch (e) {
+                createdDateStr = 'Recent';
+            }
+        }
+
+        const statusBadge = isNotified
+            ? `<span class="status-badge completed">NOTIFIED</span>`
+            : `<span class="status-badge pending">WAITING</span>`;
+
+        let outreachBtnHtml = '';
+        if (isPhone) {
+            const waText = encodeURIComponent(`Namaste from Artpoure! The handloom ${item.category || ''} collection you joined the priority waitlist for has arrived. Explore our newest weaves now at artpoure.in`);
+            const waUrl = `https://wa.me/91${phone10}?text=${waText}`;
+            outreachBtnHtml = `<a href="${waUrl}" target="_blank" rel="noopener noreferrer" class="btn-card-action btn-outreach-whatsapp">💬 WhatsApp</a>`;
+        } else if (isEmail) {
+            const subject = encodeURIComponent(`Artpoure Atelier: Priority Alert for ${item.category || ''}`);
+            const body = encodeURIComponent(`Namaste,\n\nThe ${item.category || ''} collection you requested priority notification for has just been released at Artpoure Atelier.\n\nExplore our latest weaves: https://artpoure.in\n\nWarm regards,\nArtpoure Atelier Concierge`);
+            const mailUrl = `mailto:${contact}?subject=${subject}&body=${body}`;
+            outreachBtnHtml = `<a href="${mailUrl}" class="btn-card-action btn-outreach-email">✉ Email</a>`;
+        }
+
+        const toggleText = isNotified ? 'Mark Waiting' : '✓ Mark Notified';
+
+        return `
+            <div class="waitlist-card" data-item-id="${itemId}">
+                <div class="waitlist-card-header">
+                    <span class="waitlist-category-badge">✦ ${category}</span>
+                    ${statusBadge}
+                </div>
+
+                <div class="waitlist-detail-row">
+                    <span class="waitlist-detail-label">Client Contact</span>
+                    <span class="waitlist-detail-value" style="font-weight: 600; color: var(--gold);">
+                        ${isPhone ? `<a href="tel:${phone10}">📞 ${contact}</a>` : (isEmail ? `<a href="mailto:${contact}">✉ ${contact}</a>` : contact)}
+                    </span>
+                </div>
+
+                <div class="waitlist-detail-row">
+                    <span class="waitlist-detail-label">Requested On</span>
+                    <span class="waitlist-detail-value" style="font-size: 11px; color: var(--text-muted);">${createdDateStr}</span>
+                </div>
+
+                ${item.userId ? `
+                <div class="waitlist-detail-row">
+                    <span class="waitlist-detail-label">User ID</span>
+                    <span class="waitlist-detail-value" style="font-size: 11px; font-family: monospace; color: var(--text-muted);">${item.userId}</span>
+                </div>
+                ` : ''}
+
+                <div class="waitlist-actions">
+                    ${outreachBtnHtml}
+                    <button class="btn-card-action toggle-waitlist-btn" data-id="${itemId}" data-notified="${isNotified}">
+                        ${toggleText}
+                    </button>
+                    <button class="btn-card-action danger delete-waitlist-btn" data-id="${itemId}" data-contact="${contact}">
+                        🗑 Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach listeners
+    el.waitlistList.querySelectorAll('.toggle-waitlist-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const currentNotified = btn.dataset.notified === 'true';
+            toggleWaitlistNotified(id, currentNotified);
+        });
+    });
+
+    el.waitlistList.querySelectorAll('.delete-waitlist-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const contact = btn.dataset.contact;
+            confirmDeleteWaitlist(id, contact);
+        });
+    });
+}
+
+async function toggleWaitlistNotified(itemId, currentNotified) {
+    const newNotified = !currentNotified;
+    try {
+        await updateDoc(doc(db, "waitlist", itemId), {
+            notified: newNotified,
+            notifiedAt: newNotified ? serverTimestamp() : null
+        });
+        showToast(newNotified ? "Marked as Notified" : "Marked as Waiting", "success");
+    } catch (err) {
+        console.error("Error updating waitlist status:", err);
+        showToast(`Failed to update waitlist item: ${err.message}`, "error");
+    }
+}
+
+function confirmDeleteWaitlist(itemId, contact) {
+    showConfirmModal(
+        "Delete Waitlist Entry",
+        `Are you sure you want to permanently delete the waitlist entry for "${contact}"?`,
+        async () => {
+            try {
+                await deleteDoc(doc(db, "waitlist", itemId));
+                showToast("Waitlist entry deleted", "success");
+            } catch (err) {
+                console.error("Error deleting waitlist item:", err);
+                showToast(`Failed to delete waitlist entry: ${err.message}`, "error");
+            }
+        }
+    );
+}
+
+if (el.refreshWaitlistBtn) {
+    el.refreshWaitlistBtn.addEventListener('click', () => {
+        subscribeWaitlistRealtime();
+        showToast("Re-syncing waitlist feed...", "info");
+    });
+}
+
+if (el.waitlistSearchInput) {
+    el.waitlistSearchInput.addEventListener('input', e => {
+        state.waitlistSearchQuery = e.target.value;
+        renderWaitlistList();
+    });
+}
+
+if (el.waitlistStatusFilters) {
+    el.waitlistStatusFilters.querySelectorAll('.filter-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            el.waitlistStatusFilters.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            state.waitlistFilterStatus = pill.dataset.filter;
+            renderWaitlistList();
+        });
     });
 }
 
